@@ -1,0 +1,467 @@
+-- =========================================================================
+-- 1. NAMESPACE, VARIABLES & CONFIG
+-- =========================================================================
+-- Forcing the declaration into the global namespace to clear Mudlet cache errors
+Sentry = Sentry or {}
+
+Sentry.players = Sentry.players or {}
+Sentry.denizens = Sentry.denizens or {}
+Sentry.items = Sentry.items or {}
+Sentry.effects = Sentry.effects or {} 
+Sentry.config = Sentry.config or {}
+
+Sentry.silentProbing = false
+Sentry.probeQueue = {}
+
+-- Change these strings to match your preferred aliases or system commands.
+-- Make sure to leave a trailing space!
+Sentry.config.targetCmd = "settarget " 
+Sentry.config.getCmd = "get "
+Sentry.config.probeCmd = "probe "
+Sentry.config.visible = true
+
+-- =========================================================================
+-- RUNE DICTIONARY
+-- =========================================================================
+Sentry.runeData = {
+    ["nightmare"] = {name = "Kena", effect = "Fear"},
+    ["lightning bolt"] = {name = "Uruz", effect = "Healing"},
+    ["closed eye"] = {name = "Fehu", effect = "Sleep"},
+    ["square box"] = {name = "Pithakhan", effect = "Damage Mana"},
+    ["stickman"] = {name = "Inguz", effect = "Paralysis"},
+    ["open eye"] = {name = "Wunjo", effect = "Restore Sight"},
+    ["nail"] = {name = "Sowulu", effect = "Damage Health"},
+    ["flurry of lightning bolts"] = {name = "Isaz", effect = "Disrupt Balance"},
+    ["rising sun"] = {name = "Dagaz", effect = "Heal Afflictions"},
+    ["horse"] = {name = "Raido", effect = "Return"},
+    ["volcano"] = {name = "Thurisaz", effect = "Damage Nearby"},
+    ["ball of ice"] = {name = "Hugalaz", effect = "Hailstorm"},
+    ["leech"] = {name = "Nauthiz", effect = "Draing Nourishment"},
+    ["bell"] = {name = "Mannaz", effect = "Restore Hearing"},
+    ["mountain range"] = {name = "Othala", effect = "Flame Burst"},
+    ["viper"] = {name = "Sleizak", effect = "Voyria"},
+    ["upwards-pointing arrow"] = {name = "Tiwaz", effect = "Strip Defenses"},
+    ["butterfly"] = {name = "Nairat", effect = "Entangle"},
+    ["yew"] = {name = "Eihwaz", effect = "Dampen Vibrations"},
+    ["apple core"] = {name = "Loshre", effect = "Anorexia"}
+}
+
+-- State variables for the runelist parser
+Sentry.parsingRunes = false
+Sentry.dashCount = 0
+
+-- =========================================================================
+-- 2. GEYSER UI CREATION
+-- =========================================================================
+Sentry.container = Sentry.container or Geyser.Container:new({
+    name = "SentryContainer",
+    x = 0, y = "-50%",                  -- Anchored to the bottom left
+    width = "300px", height = "50%",
+})
+
+Sentry.console = Sentry.console or Geyser.MiniConsole:new({
+    name = "SentryConsole",
+    x = 0, y = 0,
+    width = "100%", height = "100%",
+    color = "black",
+}, Sentry.container)
+
+-- =========================================================================
+-- 3. HELPER FUNCTIONS
+-- =========================================================================
+function Sentry.formatTarget(name, id)
+    local cleanName = name:lower():gsub("^a ", ""):gsub("^an ", ""):gsub("^the ", "")
+    local firstWord = cleanName:match("%a+") or "target"
+    return firstWord .. id
+end
+
+function Sentry.sortItem(item)
+    if item.attrib and item.attrib:find("m") and not item.attrib:find("d") then
+        Sentry.denizens[item.id] = item
+    else
+        Sentry.items[item.id] = item
+        
+        -- Queue walls/totems for probing ONLY if we don't already have their data
+        local nameLower = item.name:lower()
+        if (nameLower:find("wall of") and not item.direction) or nameLower:find("totem") then
+            local inQueue = false
+            for _, queuedID in ipairs(Sentry.probeQueue) do
+                if queuedID == item.id then inQueue = true; break end
+            end
+            if not inQueue then
+                table.insert(Sentry.probeQueue, item.id)
+            end
+        end
+    end
+end
+
+function Sentry.addEffect(id, displayName, color)
+    color = color or "white"
+    Sentry.effects[id] = { name = displayName, color = color }
+    Sentry.updateUI()
+end
+
+function Sentry.removeEffect(id)
+    Sentry.effects[id] = nil
+    Sentry.updateUI()
+end
+
+function Sentry.hasEffect(id)
+    return Sentry.effects[id] ~= nil
+end
+
+-- =========================================================================
+-- 4. UI UPDATER
+-- =========================================================================
+function Sentry.updateUI()
+    if not Sentry.console then return end
+    Sentry.console:clear()
+
+    local function tableHasContents(t)
+        for _ in pairs(t) do return true end
+        return false
+    end
+
+    local isFirstSection = true
+
+    -- SECTION 1: PLAYERS
+    if tableHasContents(Sentry.players) then
+        Sentry.console:cecho("<cyan>=== PLAYERS ===<reset>\n")
+        for name, p in pairs(Sentry.players) do
+            local tCmd = Sentry.config.targetCmd .. name
+            local pCmd = Sentry.config.probeCmd .. name
+            
+            Sentry.console:cechoLink("<white>[<red>T<white>]", [[send("]]..tCmd..[[", false)]], "Target " .. name, true)
+            Sentry.console:cecho(" ")
+            Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. name, true)
+            Sentry.console:cecho(" <cyan>" .. name .. "<reset>\n")
+        end
+        isFirstSection = false
+    end
+
+    -- SECTION 2: DENIZENS
+    if tableHasContents(Sentry.denizens) then
+        if not isFirstSection then Sentry.console:cecho("\n") end
+        Sentry.console:cecho("<yellow>=== DENIZENS ===<reset>\n")
+        for id, d in pairs(Sentry.denizens) do
+            local readableTarget = Sentry.formatTarget(d.name, id)
+            local tCmd = Sentry.config.targetCmd .. readableTarget
+            local pCmd = Sentry.config.probeCmd .. readableTarget
+            
+            Sentry.console:cechoLink("<white>[<red>T<white>]", [[send("]]..tCmd..[[", false)]], "Target " .. d.name, true)
+            Sentry.console:cecho(" ")
+            Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. d.name, true)
+            Sentry.console:cecho(" <yellow>" .. d.name .. "<reset>\n")
+        end
+        isFirstSection = false
+    end
+
+    -- SECTION 3: ITEMS
+    if tableHasContents(Sentry.items) then
+        if not isFirstSection then Sentry.console:cecho("\n") end
+        Sentry.console:cecho("<green>=== ITEMS ===<reset>\n")
+        
+        -- 1. Convert the items table into an array so we can sort it
+        local sortedItems = {}
+        for id, i in pairs(Sentry.items) do
+            table.insert(sortedItems, i)
+        end
+        
+        -- 2. Sort the array: Monoliths first, then alphabetical
+        table.sort(sortedItems, function(a, b)
+            local aMono = a.name:lower():find("monolith") ~= nil
+            local bMono = b.name:lower():find("monolith") ~= nil
+            if aMono and not bMono then return true end
+            if bMono and not aMono then return false end
+            return a.name < b.name
+        end)
+
+        -- 3. Draw the sorted list
+        for _, i in ipairs(sortedItems) do
+            local readableTarget = Sentry.formatTarget(i.name, i.id)
+            local gCmd = Sentry.config.getCmd .. readableTarget
+            local pCmd = Sentry.config.probeCmd .. readableTarget
+            
+            -- Default to green, but highlight monoliths in red
+            local color = "<green>"
+            if i.name:lower():find("monolith") then
+                color = "<red>"
+            end
+            
+            -- Append the direction if Sentry has found one
+            local suffix = ""
+            if i.direction then
+                suffix = " <white>(" .. i.direction:upper() .. ")"
+            end
+            
+            Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. i.name, true)
+            Sentry.console:cecho(" ")
+            Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. i.name, true)
+            Sentry.console:cecho(" " .. color .. i.name .. suffix .. "<reset>\n")
+        end
+        isFirstSection = false
+    end
+
+    -- SECTION 4: EFFECTS (UPDATED)
+    if tableHasContents(Sentry.effects) then
+        if not isFirstSection then Sentry.console:cecho("\n") end
+        Sentry.console:cecho("<magenta>=== EFFECTS ===<reset>\n")
+        for id, data in pairs(Sentry.effects) do
+            Sentry.console:cecho("<white>[<" .. data.color .. ">~<white>] <" .. data.color .. ">" .. data.name .. "<reset>\n")
+        end
+    end
+end
+
+-- =========================================================================
+-- 5. EVENT HANDLERS (GMCP)
+-- =========================================================================
+function Sentry.handleRoomChange(event)
+    if event == "gmcp.Room.Info" then
+        Sentry.effects = {}
+        Sentry.updateUI()
+        
+        Sentry.silentRunelist = true
+        send("runelist", false)
+    end
+end
+
+function Sentry.handlePlayers(event)
+    if event == "gmcp.Room.Players" then
+        Sentry.players = {}
+        for _, player in ipairs(gmcp.Room.Players) do
+            Sentry.players[player.name] = player
+        end
+    elseif event == "gmcp.Room.AddPlayer" then
+        local player = gmcp.Room.AddPlayer
+        Sentry.players[player.name] = player
+    elseif event == "gmcp.Room.RemovePlayer" then
+        local playerName = gmcp.Room.RemovePlayer
+        Sentry.players[playerName] = nil
+    end
+    Sentry.updateUI()
+end
+
+function Sentry.handleItems(event)
+    if event == "gmcp.Char.Items.List" then
+        if gmcp.Char.Items.List.location == "room" then
+            Sentry.denizens = {}
+            Sentry.items = {}
+            for _, item in ipairs(gmcp.Char.Items.List.items) do
+                Sentry.sortItem(item)
+            end
+        end
+    elseif event == "gmcp.Char.Items.Add" then
+        local item = gmcp.Char.Items.Add.item
+        if gmcp.Char.Items.Add.location == "room" then
+            Sentry.sortItem(item)
+        end
+    elseif event == "gmcp.Char.Items.Remove" then
+        local item = gmcp.Char.Items.Remove.item
+        if gmcp.Char.Items.Remove.location == "room" then
+            Sentry.denizens[item.id] = nil
+            Sentry.items[item.id] = nil
+        end
+    end
+    Sentry.updateUI()
+    
+    -- Process the probe queue IMMEDIATELY after items update
+    if #Sentry.probeQueue > 0 then
+        Sentry.silentProbing = true
+        for _, id in ipairs(Sentry.probeQueue) do
+            send("probe " .. id, false)
+        end
+        Sentry.probeQueue = {} 
+    end
+end
+
+-- =========================================================================
+-- 6. DYNAMIC TRIGGERS (Effects & Runes)
+-- =========================================================================
+Sentry.triggers = Sentry.triggers or {}
+
+function Sentry.createTriggers()
+    for _, id in ipairs(Sentry.triggers) do killTrigger(id) end
+    Sentry.triggers = {}
+
+    -- ==========================================
+    -- SMART RUNELIST PARSER
+    -- ==========================================
+    table.insert(Sentry.triggers, tempRegexTrigger("^Type\\s+Owner\\s*$", 
+        [[ Sentry.parsingRunes = true; Sentry.dashCount = 0; if Sentry.silentRunelist then deleteLine() end ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^-{10,}\\s*$", 
+        [[
+            if Sentry.parsingRunes then
+                Sentry.dashCount = Sentry.dashCount + 1
+                if Sentry.silentRunelist then deleteLine() end
+                if Sentry.dashCount == 2 then
+                    Sentry.parsingRunes = false
+                    Sentry.silentRunelist = false 
+                end
+            end
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^A rune (?:resembling|like|shaped like) an? (.+?)\\s+(\\w+)\\s*$", 
+        [[
+            if Sentry.parsingRunes then
+                if Sentry.silentRunelist then deleteLine() end
+                
+                local object = matches[2]:lower()
+                local owner = matches[3]
+                local runeInfo = Sentry.runeData[object]
+                
+                local displayName = runeInfo and (runeInfo.name .. " (" .. runeInfo.effect .. ") - " .. owner) or (object:title() .. " - " .. owner)
+                local cleanID = object:gsub("%s+", "_")
+                
+                Sentry.addEffect("rune_" .. cleanID .. "_" .. owner, displayName, "gold")
+            end
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^You find no runes\\.$", 
+        [[ if Sentry.silentRunelist then deleteLine(); Sentry.silentRunelist = false end ]]
+    ))
+
+    -- ==========================================
+    -- SKETCHING & SMUDGING (Live Updates)
+    -- ==========================================
+    -- Catch the beginning of a sketch (Optional, can just be ignored)
+    table.insert(Sentry.triggers, tempRegexTrigger("^You begin sketching an? \\w+ rune on the ground\\.$", [[]]))
+
+    -- Catch the completion of a sketch
+    table.insert(Sentry.triggers, tempRegexTrigger("^With a flourish, you finish sketching an? \\w+ rune\\.$", 
+        [[ Sentry.silentRunelist = true; send("runelist", false) ]]
+    ))
+    
+    -- Catch anyone else sketching or smudging
+    table.insert(Sentry.triggers, tempRegexTrigger("^(\\w+) sketches a rune.*$", 
+        [[ Sentry.silentRunelist = true; send("runelist", false) ]]
+    ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^(\\w+) smudges a rune.*$", 
+        [[ Sentry.silentRunelist = true; send("runelist", false) ]]
+    ))
+
+    -- ==========================================
+    -- WALL SPAWN & PROBE PARSER
+    -- ==========================================
+    -- INSTANT DIRECTION: Catch the wall rising and immediately assign it
+    table.insert(Sentry.triggers, tempRegexTrigger("^A wall of .* rises from the earth to block the exit to the (\\w+)\\.$", 
+        [[
+            local dir = matches[2]
+            for id, item in pairs(Sentry.items) do
+                if item.name:lower():find("wall of") and not item.direction then
+                    Sentry.items[id].direction = dir
+                    Sentry.updateUI()
+                    break
+                end
+            end
+        ]]
+    ))
+
+    -- BACKUP DIRECTION: Catch direction via Look/Probe
+    table.insert(Sentry.triggers, tempRegexTrigger("^A (?:large )?wall of .* stands here, blocking passage to the (\\w+)\\.$", 
+        [[
+            local dir = matches[2]
+            for id, item in pairs(Sentry.items) do
+                if item.name:lower():find("wall of") and not item.direction then
+                    Sentry.items[id].direction = dir
+                    Sentry.updateUI()
+                    break
+                end
+            end
+            if Sentry.silentProbing then deleteLine() end
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^A (?:large )?wall of .* is blocking passage to the (\\w+)\\.$", 
+        [[
+            local dir = matches[2]
+            for id, item in pairs(Sentry.items) do
+                if item.name:lower():find("wall of") and not item.direction then
+                    Sentry.items[id].direction = dir
+                    Sentry.updateUI()
+                    break
+                end
+            end
+            if Sentry.silentProbing then deleteLine() end
+        ]]
+    ))
+
+    -- GAGS: Stone Wall, Ice Wall, Weight, and Description Strings
+    table.insert(Sentry.triggers, tempRegexTrigger("^This .* looks to be made of .*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^This .* wall is made of .*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^It towers above you.*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^It weighs about .* pounds\\.$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+
+    table.insert(Sentry.triggers, tempPromptTrigger([[ Sentry.silentProbing = false ]], 1))
+
+    -- ==========================================
+    -- ENVIRONMENTAL EFFECTS
+    -- ==========================================
+    table.insert(Sentry.triggers, tempRegexTrigger("^The air is filled with a humming vibration\\.$", 
+        [[ Sentry.addEffect("vibrations", "Humming Vibrations", "magenta") ]]
+    ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^The humming vibration in the air fades away\\.$", 
+        [[ Sentry.removeEffect("vibrations") ]]
+    ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^A roaring wall of fire erupts.*$", 
+        [[ Sentry.addEffect("fire", "Roaring Fire", "orange_red") ]]
+    ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^The wall of fire burns out and disappears\\.$", 
+        [[ Sentry.removeEffect("fire") ]]
+    ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^The area is flooded with water\\.$", 
+        [[ Sentry.addEffect("flood", "Flooded", "blue") ]]
+    ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^The floodwaters recede\\.$", 
+        [[ Sentry.removeEffect("flood") ]]
+    ))
+end
+
+-- =========================================================================
+-- 7. VISIBILITY TOGGLE & ALIAS
+-- =========================================================================
+function Sentry.toggle()
+    Sentry.config.visible = not Sentry.config.visible
+    
+    if Sentry.config.visible then
+        Sentry.container:show()
+        cecho("\n<green>Sentry:<reset> GUI is now <green>VISIBLE<reset>.\n")
+    else
+        Sentry.container:hide()
+        cecho("\n<green>Sentry:<reset> GUI is now <red>HIDDEN<reset>.\n")
+    end
+end
+
+-- Create the dynamic alias
+if Sentry.toggleAlias then killAlias(Sentry.toggleAlias) end
+Sentry.toggleAlias = tempAlias("^sentry toggle$", [[ Sentry.toggle() ]])
+
+-- Ensure the UI matches the initial config state when the script first loads
+if Sentry.config.visible then
+    Sentry.container:show()
+else
+    Sentry.container:hide()
+end
+
+-- =========================================================================
+--8. EVENT REGISTRATION
+-- =========================================================================
+Sentry.events = Sentry.events or {}
+
+for _, handler in ipairs(Sentry.events) do
+    killAnonymousEventHandler(handler)
+end
+Sentry.events = {}
+
+table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Room.Info", "Sentry.handleRoomChange"))
+table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Room.Players", "Sentry.handlePlayers"))
+table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Room.AddPlayer", "Sentry.handlePlayers"))
+table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Room.RemovePlayer", "Sentry.handlePlayers"))
+table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Items.List", "Sentry.handleItems"))
+table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Items.Add", "Sentry.handleItems"))
+table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Items.Remove", "Sentry.handleItems"))
+
+Sentry.updateUI()
