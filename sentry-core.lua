@@ -28,8 +28,9 @@ Sentry.config.colorMounts = false
 Sentry.config.myLoyals = Sentry.config.myLoyals or {}
 
 Sentry.config.furnitureKeywords = {
-    "bed", "dresser", "table", "statue", "chair", 
-    "desk", "rug", "tapestry", "cabinet", "sofa", "bench"
+    "bed", "dresser", "table", "statue", "chair", "desk", "rug", "tapestry",
+    "cabinet", "sofa", "bench, stool", "shelf", "couch", "chandelier", "altar",
+    "throne", "coffin", "fireplace",
 }
 
 Sentry.config.clothingKeywords = {
@@ -102,25 +103,20 @@ function Sentry.sortItem(item)
         local isClothing = false
         local nameLower = item.name:lower()
         
-        -- Check Furniture
         for _, kw in ipairs(Sentry.config.furnitureKeywords) do
             if nameLower:find("%f[%a]" .. kw .. "%f[%A]") then
-                isFurniture = true
-                break
+                isFurniture = true; break
             end
         end
 
-        -- Check Clothing (only if it wasn't already flagged as furniture)
         if not isFurniture then
             for _, kw in ipairs(Sentry.config.clothingKeywords) do
                 if nameLower:find("%f[%a]" .. kw .. "%f[%A]") then
-                    isClothing = true
-                    break
+                    isClothing = true; break
                 end
             end
         end
 
-        -- Sort into the correct bucket
         if isFurniture then
             Sentry.furniture[item.id] = item
         elseif isClothing then
@@ -129,8 +125,8 @@ function Sentry.sortItem(item)
             Sentry.items[item.id] = item
         end
         
-        -- Queue walls/totems for probing ONLY if we don't already have their data
-        if (nameLower:find("wall of") and not item.direction) or nameLower:find("totem") then
+        -- UPDATED: Added 'not item.runes' to prevent infinite totem probing
+        if (nameLower:find("wall of") and not item.direction) or (nameLower:find("totem") and not item.runes) then
             local inQueue = false
             for _, queuedID in ipairs(Sentry.probeQueue) do
                 if queuedID == item.id then inQueue = true; break end
@@ -217,8 +213,16 @@ function Sentry.updateUI()
 
     local isFirstSection = true
 
+    -- SECTION 0: ROOM NAME
+    if gmcp and gmcp.Room and gmcp.Room.Info and gmcp.Room.Info.name then
+        Sentry.console:cecho("<white>== Location ==<reset>\n")
+        Sentry.console:cecho("<white><yellow>" .. gmcp.Room.Info.name .."<white><reset>\n")
+        isFirstSection = false
+    end
+
     -- SECTION 1: PLAYERS
     if tableHasContents(Sentry.players) then
+        if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<cyan>=== PLAYERS ===<reset>\n")
         for name, p in pairs(Sentry.players) do
             local tCmd = Sentry.config.targetCmd .. name
@@ -298,13 +302,32 @@ function Sentry.updateUI()
             local gCmd = Sentry.config.getCmd .. readableTarget
             local pCmd = Sentry.config.probeCmd .. readableTarget
             
-            -- Pass the ID to the color router
             local iColor = Sentry.getColor("item", i.name, i.id, "<green>")
-            
             if i.name:lower():find("monolith") then iColor = "<red>" end
             
             local suffix = ""
-            if i.direction then suffix = " <white>(" .. i.direction:upper() .. ")" end
+            
+            -- Direction Suffix (for walls)
+            if i.direction then 
+                suffix = suffix .. " <white>(" .. i.direction:upper() .. ")" 
+            end
+            
+            -- Rune Suffix (for totems)
+            if i.runes then
+                local runeStrings = {}
+                for runeName, count in pairs(i.runes) do
+                    if count > 1 then
+                        table.insert(runeStrings, runeName .. "x" .. count)
+                    else
+                        table.insert(runeStrings, runeName)
+                    end
+                end
+                
+                if #runeStrings > 0 then
+                    table.sort(runeStrings) -- Alphabetize the runes for quick reading
+                    suffix = suffix .. " <cyan>(" .. table.concat(runeStrings, ", ") .. ")"
+                end
+            end
             
             Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. i.name, true)
             Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. i.name, true)
@@ -429,13 +452,22 @@ function Sentry.handleItems(event)
     end
     Sentry.updateUI()
     
-    -- Process the probe queue IMMEDIATELY after items update
+    -- Process the probe queue SAFELY after the room prompt clears
     if #Sentry.probeQueue > 0 then
-        Sentry.silentProbing = true
-        for _, id in ipairs(Sentry.probeQueue) do
-            send("probe " .. id, false)
-        end
+        -- Copy the queue into a temporary table so we can clear the main one
+        Sentry.activeProbes = Sentry.probeQueue
         Sentry.probeQueue = {} 
+        
+        tempTimer(0.25, function()
+            Sentry.silentProbing = true
+            for _, id in ipairs(Sentry.activeProbes) do
+                send("probe " .. id, false)
+            end
+            Sentry.activeProbes = {}
+            
+            -- Turn it off when the NEXT prompt (the probe response) arrives
+            tempPromptTrigger(function() Sentry.silentProbing = false end, 1)
+        end)
     end
 end
 
@@ -622,6 +654,57 @@ function Sentry.createTriggers()
     table.insert(Sentry.triggers, tempRegexTrigger("^It weighs about .* pounds\\.$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     table.insert(Sentry.triggers, tempPromptTrigger([[ Sentry.silentProbing = false ]], 1))
 
+    -- ==========================================
+    -- TOTEM PROBE PARSER (Native Achaea Text)
+    -- ==========================================
+    -- 1. Catch the native header
+    table.insert(Sentry.triggers, tempRegexTrigger("^It has the following runes sketched upon it:$", 
+        [[ if Sentry.silentProbing then deleteLine() end ]]
+    ))
+
+    -- 2. Catch the native slot lines and count them
+    table.insert(Sentry.triggers, tempRegexTrigger("is sketched into slot", 
+        [[
+            -- Gag it immediately if we are silently probing
+            if Sentry.silentProbing then deleteLine() end
+            
+            local lineLower = line:lower()
+            local runeName = nil
+            
+            -- Scan the raw line against our rune dictionary
+            for key, data in pairs(Sentry.runeData) do
+                -- Account for slight text variations between your runelist and totem descriptions
+                local searchKey = key
+                if key == "stickman" then searchKey = "stick man" end
+                if key == "upwards-pointing arrow" then searchKey = "upward-pointing arrow" end
+                
+                if lineLower:find(searchKey) then
+                    runeName = data.name
+                    break
+                end
+            end
+            
+            if runeName then
+                for id, item in pairs(Sentry.items) do
+                    if item.name:lower():find("totem") then
+                        Sentry.items[id].runes = Sentry.items[id].runes or {}
+                        Sentry.items[id].runes[runeName] = (Sentry.items[id].runes[runeName] or 0) + 1
+                        Sentry.updateUI()
+                        break 
+                    end
+                end
+            end
+        ]]
+    ))
+
+    -- 3. Gag all the extra ownership and status spam
+    table.insert(Sentry.triggers, tempRegexTrigger("^It is tuned against.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^It bears the distinctive mark of.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^You may use this item to parry with\\.", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^This totem is the property of.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^The totem is currently empowered.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^It has \\d+ months of usefulness left\\.", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    
     -- ==========================================
     -- ENVIRONMENTAL EFFECTS
     -- ==========================================
