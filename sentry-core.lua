@@ -20,14 +20,20 @@ Sentry.silentRunelist = 0 -- Upgraded to a counter!
 -- =========================================================================
 -- 1. CONFIGURATION
 -- =========================================================================
+-- =========================================================================
+-- 1. CONFIGURATION
+-- =========================================================================
 Sentry.config.targetCmd = "settarget " 
 Sentry.config.getCmd = "get "
 Sentry.config.probeCmd = "probe "
 Sentry.config.visible = true
 
--- NEW: Color Control Toggles
-Sentry.config.useNDBColors = true    -- Toggle checking an NDB for player colors
-Sentry.config.colorMounts = false    -- Toggle highlighting legendary mounts
+-- Color Control Toggles
+Sentry.config.useNDBColors = true
+Sentry.config.colorMounts = false
+
+-- NEW: Loyal Denizens (Add your personal mount/pet IDs here as strings)
+Sentry.config.myLoyals = {}
 
 -- =========================================================================
 -- RUNE DICTIONARY
@@ -122,13 +128,12 @@ end
 -- =========================================================================
 -- COLOR ROUTER
 -- =========================================================================
-function Sentry.getColor(category, name, defaultColor)
+-- UPDATED: Added 'id' argument to check against our loyals list
+function Sentry.getColor(category, name, id, defaultColor)
     -- PLAYERS
     if category == "player" then
         if Sentry.config.useNDBColors and Legacy and Legacy.NDB and Legacy.NDB.color then
             local ndbColor = nil
-            
-            -- Legacy's NDB sometimes acts as a function, sometimes a table depending on the version
             if type(Legacy.NDB.color) == "function" then
                 ndbColor = Legacy.NDB.color(name:title())
             elseif type(Legacy.NDB.color) == "table" then
@@ -136,26 +141,24 @@ function Sentry.getColor(category, name, defaultColor)
             end
 
             if ndbColor and ndbColor ~= "" then
-                -- Ensure it's wrapped in <> brackets for Geyser formatting
-                if not ndbColor:match("^<.*>$") then
-                    ndbColor = "<" .. ndbColor .. ">"
-                end
+                if not ndbColor:match("^<.*>$") then ndbColor = "<" .. ndbColor .. ">" end
                 return ndbColor
             end
         end
         return defaultColor
 
-    -- DENIZENS (Where mounts typically show up)
+    -- DENIZENS
     elseif category == "denizen" then
+        -- Check if it's one of your specific loyals first
+        if id and Sentry.config.myLoyals[tostring(id)] then
+            return "<cyan>" -- Gives your loyals a friendly blue color
+        end
+        
         local nameLower = name:lower()
         local isLegendaryMount = nameLower:find("pegasus") or nameLower:find("griffon") or nameLower:find("dragon")
         
-        if isLegendaryMount then
-            if Sentry.config.colorMounts then
-                return "<purple>"
-            else
-                return defaultColor 
-            end
+        if isLegendaryMount and Sentry.config.colorMounts then
+            return "<purple>"
         end
         
         return defaultColor
@@ -189,33 +192,53 @@ function Sentry.updateUI()
             local tCmd = Sentry.config.targetCmd .. name
             local pCmd = Sentry.config.probeCmd .. name
             
-            -- Ask the router for the color (default to cyan)
-            local pColor = Sentry.getColor("player", name, "<cyan>")
+            -- Pass nil for ID since players don't use them here
+            local pColor = Sentry.getColor("player", name, nil, "<cyan>")
             
             Sentry.console:cechoLink("<white>[<red>T<white>]", [[send("]]..tCmd..[[", false)]], "Target " .. name, true)
-            Sentry.console:cecho(" ")
             Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. name, true)
             Sentry.console:cecho(" " .. pColor .. name .. "<reset>\n")
         end
         isFirstSection = false
     end
 
-    -- SECTION 2: DENIZENS
+    -- SECTION 2: DENIZENS (UPDATED FOR LOYALS)
     if tableHasContents(Sentry.denizens) then
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<yellow>=== DENIZENS ===<reset>\n")
+        
+        -- Convert to array for sorting
+        local sortedDenizens = {}
         for id, d in pairs(Sentry.denizens) do
-            local readableTarget = Sentry.formatTarget(d.name, id)
+            table.insert(sortedDenizens, d)
+        end
+        
+        -- Sort: Loyals first, then alphabetical
+        table.sort(sortedDenizens, function(a, b)
+            local aLoyal = Sentry.config.myLoyals[tostring(a.id)] == true
+            local bLoyal = Sentry.config.myLoyals[tostring(b.id)] == true
+            if aLoyal and not bLoyal then return true end
+            if bLoyal and not aLoyal then return false end
+            return a.name < b.name
+        end)
+
+        for _, d in ipairs(sortedDenizens) do
+            local readableTarget = Sentry.formatTarget(d.name, d.id)
             local tCmd = Sentry.config.targetCmd .. readableTarget
             local pCmd = Sentry.config.probeCmd .. readableTarget
             
-            -- Ask the router for the color (default to yellow)
-            local dColor = Sentry.getColor("denizen", d.name, "<yellow>")
+            -- Pass the ID to the color router
+            local dColor = Sentry.getColor("denizen", d.name, d.id, "<yellow>")
+            
+            -- Append a text tag so they stand out clearly
+            local suffix = ""
+            if Sentry.config.myLoyals[tostring(d.id)] then
+                suffix = " <white>(Loyal)"
+            end
             
             Sentry.console:cechoLink("<white>[<red>T<white>]", [[send("]]..tCmd..[[", false)]], "Target " .. d.name, true)
-            Sentry.console:cecho(" ")
             Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. d.name, true)
-            Sentry.console:cecho(" " .. dColor .. d.name .. "<reset>\n")
+            Sentry.console:cecho(" " .. dColor .. d.name .. suffix .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -243,21 +266,15 @@ function Sentry.updateUI()
             local gCmd = Sentry.config.getCmd .. readableTarget
             local pCmd = Sentry.config.probeCmd .. readableTarget
             
-            -- Ask the router for the color (default to green)
-            local iColor = Sentry.getColor("item", i.name, "<green>")
+            -- Pass the ID to the color router
+            local iColor = Sentry.getColor("item", i.name, i.id, "<green>")
             
-            -- Monolith override (Safety check to ensure they always pop)
-            if i.name:lower():find("monolith") then
-                iColor = "<red>"
-            end
+            if i.name:lower():find("monolith") then iColor = "<red>" end
             
             local suffix = ""
-            if i.direction then
-                suffix = " <white>(" .. i.direction:upper() .. ")"
-            end
+            if i.direction then suffix = " <white>(" .. i.direction:upper() .. ")" end
             
             Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. i.name, true)
-            Sentry.console:cecho(" ")
             Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. i.name, true)
             Sentry.console:cecho(" " .. iColor .. i.name .. suffix .. "<reset>\n")
         end
@@ -352,6 +369,47 @@ Sentry.triggers = Sentry.triggers or {}
 function Sentry.createTriggers()
     for _, id in ipairs(Sentry.triggers) do killTrigger(id) end
     Sentry.triggers = {}
+
+    -- ==========================================
+    -- LOYALS PARSER (Manual/Login update)
+    -- ==========================================
+    -- Catch the header to turn on the parser
+    table.insert(Sentry.triggers, tempRegexTrigger("^Your loyal companions are:$", 
+        [[ Sentry.parsingLoyals = true ]]
+    ))
+
+    -- Catch the "empty" response just in case
+    table.insert(Sentry.triggers, tempRegexTrigger("^You have no loyal companions\\.$", 
+        [[ 
+            Sentry.config.myLoyals = {} 
+            Sentry.updateUI()
+        ]]
+    ))
+
+    -- Parse the individual loyal lines
+    -- Matches: "a pristine white falcon481629 is at (house) Private sleeping quarters."
+    table.insert(Sentry.triggers, tempRegexTrigger("^(.*?)(\\d+) is at .*\\.$", 
+        [[
+            if Sentry.parsingLoyals then
+                -- matches[3] is the ID (the digits)
+                local id = matches[3]
+                Sentry.config.myLoyals[tostring(id)] = true
+                
+                -- Force a UI update so they immediately turn cyan if they are in the room!
+                Sentry.updateUI()
+            end
+        ]]
+    ))
+
+    -- Use the prompt to close the parser
+    table.insert(Sentry.triggers, tempPromptTrigger(
+        [[
+            if Sentry.parsingLoyals then
+                Sentry.parsingLoyals = false
+                cecho("\n<green>Sentry:<reset> Loyal IDs successfully tracked!\n")
+            end
+        ]], 1
+    ))
 
     -- ==========================================
     -- SMART RUNELIST PARSER (Debug Mode)
@@ -484,7 +542,6 @@ function Sentry.createTriggers()
     table.insert(Sentry.triggers, tempRegexTrigger("^This .* wall is made of .*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     table.insert(Sentry.triggers, tempRegexTrigger("^It towers above you.*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     table.insert(Sentry.triggers, tempRegexTrigger("^It weighs about .* pounds\\.$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
-
     table.insert(Sentry.triggers, tempPromptTrigger([[ Sentry.silentProbing = false ]], 1))
 
     -- ==========================================
@@ -528,6 +585,16 @@ end
 -- Create the dynamic alias
 if Sentry.toggleAlias then killAlias(Sentry.toggleAlias) end
 Sentry.toggleAlias = tempAlias("^sentry toggle$", [[ Sentry.toggle() ]])
+
+-- NEW: Create the dynamic alias for updating loyals
+if Sentry.loyalsAlias then killAlias(Sentry.loyalsAlias) end
+Sentry.loyalsAlias = tempAlias("^sentry loyals$", 
+    [[ 
+        cecho("\n<green>Sentry:<reset> Updating loyal companions...\n")
+        Sentry.config.myLoyals = {} -- Clear the old list
+        send("loyals") 
+    ]]
+)
 
 -- Ensure the UI matches the initial config state when the script first loads
 if Sentry.config.visible then
