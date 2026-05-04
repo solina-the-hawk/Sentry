@@ -12,13 +12,22 @@ Sentry.config = Sentry.config or {}
 
 Sentry.silentProbing = false
 Sentry.probeQueue = {}
+Sentry.silentRunelist = 0 -- Upgraded to a counter!
 
 -- Change these strings to match your preferred aliases or system commands.
 -- Make sure to leave a trailing space!
+
+-- =========================================================================
+-- 1. CONFIGURATION
+-- =========================================================================
 Sentry.config.targetCmd = "settarget " 
 Sentry.config.getCmd = "get "
 Sentry.config.probeCmd = "probe "
 Sentry.config.visible = true
+
+-- NEW: Color Control Toggles
+Sentry.config.useNDBColors = true    -- Toggle checking an NDB for player colors
+Sentry.config.colorMounts = false    -- Toggle highlighting legendary mounts
 
 -- =========================================================================
 -- RUNE DICTIONARY
@@ -111,6 +120,55 @@ function Sentry.hasEffect(id)
 end
 
 -- =========================================================================
+-- COLOR ROUTER
+-- =========================================================================
+function Sentry.getColor(category, name, defaultColor)
+    -- PLAYERS
+    if category == "player" then
+        if Sentry.config.useNDBColors and Legacy and Legacy.NDB and Legacy.NDB.color then
+            local ndbColor = nil
+            
+            -- Legacy's NDB sometimes acts as a function, sometimes a table depending on the version
+            if type(Legacy.NDB.color) == "function" then
+                ndbColor = Legacy.NDB.color(name:title())
+            elseif type(Legacy.NDB.color) == "table" then
+                ndbColor = Legacy.NDB.color[name:title()]
+            end
+
+            if ndbColor and ndbColor ~= "" then
+                -- Ensure it's wrapped in <> brackets for Geyser formatting
+                if not ndbColor:match("^<.*>$") then
+                    ndbColor = "<" .. ndbColor .. ">"
+                end
+                return ndbColor
+            end
+        end
+        return defaultColor
+
+    -- DENIZENS (Where mounts typically show up)
+    elseif category == "denizen" then
+        local nameLower = name:lower()
+        local isLegendaryMount = nameLower:find("pegasus") or nameLower:find("griffon") or nameLower:find("dragon")
+        
+        if isLegendaryMount then
+            if Sentry.config.colorMounts then
+                return "<purple>"
+            else
+                return defaultColor 
+            end
+        end
+        
+        return defaultColor
+
+    -- ITEMS
+    elseif category == "item" then
+        return defaultColor
+    end
+
+    return defaultColor
+end
+
+-- =========================================================================
 -- 4. UI UPDATER
 -- =========================================================================
 function Sentry.updateUI()
@@ -131,10 +189,13 @@ function Sentry.updateUI()
             local tCmd = Sentry.config.targetCmd .. name
             local pCmd = Sentry.config.probeCmd .. name
             
+            -- Ask the router for the color (default to cyan)
+            local pColor = Sentry.getColor("player", name, "<cyan>")
+            
             Sentry.console:cechoLink("<white>[<red>T<white>]", [[send("]]..tCmd..[[", false)]], "Target " .. name, true)
             Sentry.console:cecho(" ")
             Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. name, true)
-            Sentry.console:cecho(" <cyan>" .. name .. "<reset>\n")
+            Sentry.console:cecho(" " .. pColor .. name .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -148,10 +209,13 @@ function Sentry.updateUI()
             local tCmd = Sentry.config.targetCmd .. readableTarget
             local pCmd = Sentry.config.probeCmd .. readableTarget
             
+            -- Ask the router for the color (default to yellow)
+            local dColor = Sentry.getColor("denizen", d.name, "<yellow>")
+            
             Sentry.console:cechoLink("<white>[<red>T<white>]", [[send("]]..tCmd..[[", false)]], "Target " .. d.name, true)
             Sentry.console:cecho(" ")
             Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. d.name, true)
-            Sentry.console:cecho(" <yellow>" .. d.name .. "<reset>\n")
+            Sentry.console:cecho(" " .. dColor .. d.name .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -161,13 +225,11 @@ function Sentry.updateUI()
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<green>=== ITEMS ===<reset>\n")
         
-        -- 1. Convert the items table into an array so we can sort it
         local sortedItems = {}
         for id, i in pairs(Sentry.items) do
             table.insert(sortedItems, i)
         end
         
-        -- 2. Sort the array: Monoliths first, then alphabetical
         table.sort(sortedItems, function(a, b)
             local aMono = a.name:lower():find("monolith") ~= nil
             local bMono = b.name:lower():find("monolith") ~= nil
@@ -176,19 +238,19 @@ function Sentry.updateUI()
             return a.name < b.name
         end)
 
-        -- 3. Draw the sorted list
         for _, i in ipairs(sortedItems) do
             local readableTarget = Sentry.formatTarget(i.name, i.id)
             local gCmd = Sentry.config.getCmd .. readableTarget
             local pCmd = Sentry.config.probeCmd .. readableTarget
             
-            -- Default to green, but highlight monoliths in red
-            local color = "<green>"
+            -- Ask the router for the color (default to green)
+            local iColor = Sentry.getColor("item", i.name, "<green>")
+            
+            -- Monolith override (Safety check to ensure they always pop)
             if i.name:lower():find("monolith") then
-                color = "<red>"
+                iColor = "<red>"
             end
             
-            -- Append the direction if Sentry has found one
             local suffix = ""
             if i.direction then
                 suffix = " <white>(" .. i.direction:upper() .. ")"
@@ -197,7 +259,7 @@ function Sentry.updateUI()
             Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. i.name, true)
             Sentry.console:cecho(" ")
             Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. i.name, true)
-            Sentry.console:cecho(" " .. color .. i.name .. suffix .. "<reset>\n")
+            Sentry.console:cecho(" " .. iColor .. i.name .. suffix .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -217,11 +279,19 @@ end
 -- =========================================================================
 function Sentry.handleRoomChange(event)
     if event == "gmcp.Room.Info" then
-        Sentry.effects = {}
-        Sentry.updateUI()
+        local currentRoom = gmcp.Room.Info.num
         
-        Sentry.silentRunelist = true
-        send("runelist", false)
+        -- Only wipe effects and check runes if we ACTUALLY changed rooms
+        if Sentry.lastRoom ~= currentRoom then
+            Sentry.lastRoom = currentRoom
+            
+            Sentry.effects = {}
+            Sentry.updateUI()
+            
+            if type(Sentry.silentRunelist) ~= "number" then Sentry.silentRunelist = 0 end
+            Sentry.silentRunelist = Sentry.silentRunelist + 1
+            send("runelist", false)
+        end
     end
 end
 
@@ -284,29 +354,46 @@ function Sentry.createTriggers()
     Sentry.triggers = {}
 
     -- ==========================================
-    -- SMART RUNELIST PARSER
+    -- SMART RUNELIST PARSER (Debug Mode)
     -- ==========================================
-    table.insert(Sentry.triggers, tempRegexTrigger("^Type\\s+Owner\\s*$", 
-        [[ Sentry.parsingRunes = true; Sentry.dashCount = 0; if Sentry.silentRunelist then deleteLine() end ]]
+    -- 1. Catch the Header (Stripped anchors)
+    table.insert(Sentry.triggers, tempRegexTrigger("Type.+Owner", 
+        [[ 
+            Sentry.parsingRunes = true
+            Sentry.dashCount = 0
+            if type(Sentry.silentRunelist) == "number" and Sentry.silentRunelist > 0 then 
+                deleteLine() 
+            end 
+        ]]
     ))
 
-    table.insert(Sentry.triggers, tempRegexTrigger("^-{10,}\\s*$", 
+    -- 2. Catch the Dashes
+    table.insert(Sentry.triggers, tempRegexTrigger("-{20,}", 
         [[
             if Sentry.parsingRunes then
                 Sentry.dashCount = Sentry.dashCount + 1
-                if Sentry.silentRunelist then deleteLine() end
+                
+                if type(Sentry.silentRunelist) == "number" and Sentry.silentRunelist > 0 then 
+                    deleteLine() 
+                end
+                
                 if Sentry.dashCount == 2 then
                     Sentry.parsingRunes = false
-                    Sentry.silentRunelist = false 
+                    if type(Sentry.silentRunelist) == "number" and Sentry.silentRunelist > 0 then
+                        Sentry.silentRunelist = Sentry.silentRunelist - 1
+                    end
                 end
             end
         ]]
     ))
 
-    table.insert(Sentry.triggers, tempRegexTrigger("^A rune (?:resembling|like|shaped like) an? (.+?)\\s+(\\w+)\\s*$", 
+    -- 3. Catch and Parse the Rune Line (Fixed greedy match)
+    table.insert(Sentry.triggers, tempRegexTrigger("^A rune (?:resembling|like|shaped like) a[n]? (.+?)\\s{2,}(\\w+)", 
         [[
             if Sentry.parsingRunes then
-                if Sentry.silentRunelist then deleteLine() end
+                if type(Sentry.silentRunelist) == "number" and Sentry.silentRunelist > 0 then 
+                    deleteLine() 
+                end
                 
                 local object = matches[2]:lower()
                 local owner = matches[3]
@@ -320,27 +407,30 @@ function Sentry.createTriggers()
         ]]
     ))
 
-    table.insert(Sentry.triggers, tempRegexTrigger("^You find no runes\\.$", 
-        [[ if Sentry.silentRunelist then deleteLine(); Sentry.silentRunelist = false end ]]
+    -- 4. Catch the "Empty" Runelist Response (Stripped anchors)
+    table.insert(Sentry.triggers, tempRegexTrigger("You find no runes", 
+        [[ 
+            if type(Sentry.silentRunelist) == "number" and Sentry.silentRunelist > 0 then 
+                deleteLine()
+                Sentry.silentRunelist = Sentry.silentRunelist - 1 
+            end 
+        ]]
     ))
 
     -- ==========================================
     -- SKETCHING & SMUDGING (Live Updates)
     -- ==========================================
-    -- Catch the beginning of a sketch (Optional, can just be ignored)
     table.insert(Sentry.triggers, tempRegexTrigger("^You begin sketching an? \\w+ rune on the ground\\.$", [[]]))
 
-    -- Catch the completion of a sketch
     table.insert(Sentry.triggers, tempRegexTrigger("^With a flourish, you finish sketching an? \\w+ rune\\.$", 
-        [[ Sentry.silentRunelist = true; send("runelist", false) ]]
+        [[ Sentry.silentRunelist = Sentry.silentRunelist + 1; send("runelist", false) ]]
     ))
     
-    -- Catch anyone else sketching or smudging
     table.insert(Sentry.triggers, tempRegexTrigger("^(\\w+) sketches a rune.*$", 
-        [[ Sentry.silentRunelist = true; send("runelist", false) ]]
+        [[ Sentry.silentRunelist = Sentry.silentRunelist + 1; send("runelist", false) ]]
     ))
     table.insert(Sentry.triggers, tempRegexTrigger("^(\\w+) smudges a rune.*$", 
-        [[ Sentry.silentRunelist = true; send("runelist", false) ]]
+        [[ Sentry.silentRunelist = Sentry.silentRunelist + 1; send("runelist", false) ]]
     ))
 
     -- ==========================================
@@ -463,5 +553,7 @@ table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Room.RemovePlaye
 table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Items.List", "Sentry.handleItems"))
 table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Items.Add", "Sentry.handleItems"))
 table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Items.Remove", "Sentry.handleItems"))
+
+Sentry.createTriggers()
 
 Sentry.updateUI()
