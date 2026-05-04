@@ -1,25 +1,20 @@
 -- =========================================================================
 -- 1. NAMESPACE, VARIABLES & CONFIG
 -- =========================================================================
--- Forcing the declaration into the global namespace to clear Mudlet cache errors
 Sentry = Sentry or {}
 
 Sentry.players = Sentry.players or {}
 Sentry.denizens = Sentry.denizens or {}
 Sentry.items = Sentry.items or {}
+Sentry.furniture = Sentry.furniture or {}
+Sentry.clothing = Sentry.clothing or {}
 Sentry.effects = Sentry.effects or {} 
 Sentry.config = Sentry.config or {}
 
 Sentry.silentProbing = false
 Sentry.probeQueue = {}
-Sentry.silentRunelist = 0 -- Upgraded to a counter!
+Sentry.silentRunelist = 0 
 
--- Change these strings to match your preferred aliases or system commands.
--- Make sure to leave a trailing space!
-
--- =========================================================================
--- 1. CONFIGURATION
--- =========================================================================
 -- =========================================================================
 -- 1. CONFIGURATION
 -- =========================================================================
@@ -28,12 +23,21 @@ Sentry.config.getCmd = "get "
 Sentry.config.probeCmd = "probe "
 Sentry.config.visible = true
 
--- Color Control Toggles
 Sentry.config.useNDBColors = true
 Sentry.config.colorMounts = false
+Sentry.config.myLoyals = Sentry.config.myLoyals or {}
 
--- NEW: Loyal Denizens (Add your personal mount/pet IDs here as strings)
-Sentry.config.myLoyals = {}
+Sentry.config.furnitureKeywords = {
+    "bed", "dresser", "table", "statue", "chair", 
+    "desk", "rug", "tapestry", "cabinet", "sofa", "bench"
+}
+
+Sentry.config.clothingKeywords = {
+    "boots", "sandals", "shoes", "blouse", "shirt", "tunic",
+    "trousers", "pants", "skirt", "bra", "panties", "underwear",
+    "cloak", "cape", "robe", "gloves", "gauntlets", "hat", "helmet", "belt",
+    "dress", "vest", "gown", "corset", "socks", "stockings", "jacket", "coat"
+}
 
 -- =========================================================================
 -- RUNE DICTIONARY
@@ -94,10 +98,38 @@ function Sentry.sortItem(item)
     if item.attrib and item.attrib:find("m") and not item.attrib:find("d") then
         Sentry.denizens[item.id] = item
     else
-        Sentry.items[item.id] = item
+        local isFurniture = false
+        local isClothing = false
+        local nameLower = item.name:lower()
+        
+        -- Check Furniture
+        for _, kw in ipairs(Sentry.config.furnitureKeywords) do
+            if nameLower:find("%f[%a]" .. kw .. "%f[%A]") then
+                isFurniture = true
+                break
+            end
+        end
+
+        -- Check Clothing (only if it wasn't already flagged as furniture)
+        if not isFurniture then
+            for _, kw in ipairs(Sentry.config.clothingKeywords) do
+                if nameLower:find("%f[%a]" .. kw .. "%f[%A]") then
+                    isClothing = true
+                    break
+                end
+            end
+        end
+
+        -- Sort into the correct bucket
+        if isFurniture then
+            Sentry.furniture[item.id] = item
+        elseif isClothing then
+            Sentry.clothing[item.id] = item
+        else
+            Sentry.items[item.id] = item
+        end
         
         -- Queue walls/totems for probing ONLY if we don't already have their data
-        local nameLower = item.name:lower()
         if (nameLower:find("wall of") and not item.direction) or nameLower:find("totem") then
             local inQueue = false
             for _, queuedID in ipairs(Sentry.probeQueue) do
@@ -281,7 +313,49 @@ function Sentry.updateUI()
         isFirstSection = false
     end
 
-    -- SECTION 4: EFFECTS (UPDATED)
+    -- SECTION 4: CLOTHING
+    if tableHasContents(Sentry.clothing) then
+        if not isFirstSection then Sentry.console:cecho("\n") end
+        Sentry.console:cecho("<plum>=== CLOTHING ===<reset>\n")
+        
+        local sortedClothing = {}
+        for id, c in pairs(Sentry.clothing) do table.insert(sortedClothing, c) end
+        table.sort(sortedClothing, function(a, b) return a.name < b.name end)
+
+        for _, c in ipairs(sortedClothing) do
+            local readableTarget = Sentry.formatTarget(c.name, c.id)
+            local gCmd = Sentry.config.getCmd .. readableTarget
+            local pCmd = Sentry.config.probeCmd .. readableTarget
+            
+            -- We KEEP the Get button because dropped clothing can be picked up
+            Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. c.name, true)
+            Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. c.name, true)
+            Sentry.console:cecho(" <plum>" .. c.name .. "<reset>\n")
+        end
+        isFirstSection = false
+    end
+
+    -- SECTION 5: FURNITURE
+    if tableHasContents(Sentry.furniture) then
+        if not isFirstSection then Sentry.console:cecho("\n") end
+        Sentry.console:cecho("<grey>=== FURNITURE ===<reset>\n")
+        
+        local sortedFurn = {}
+        for id, f in pairs(Sentry.furniture) do table.insert(sortedFurn, f) end
+        table.sort(sortedFurn, function(a, b) return a.name < b.name end)
+
+        for _, f in ipairs(sortedFurn) do
+            local readableTarget = Sentry.formatTarget(f.name, f.id)
+            local pCmd = Sentry.config.probeCmd .. readableTarget
+            
+            -- We skip the Get button because furniture cannot be picked up
+            Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. f.name, true)
+            Sentry.console:cecho(" <LightSlateGrey>" .. f.name .. "<reset>\n")
+        end
+        isFirstSection = false
+    end
+
+    -- SECTION 6: EFFECTS
     if tableHasContents(Sentry.effects) then
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<magenta>=== EFFECTS ===<reset>\n")
@@ -333,6 +407,8 @@ function Sentry.handleItems(event)
         if gmcp.Char.Items.List.location == "room" then
             Sentry.denizens = {}
             Sentry.items = {}
+            Sentry.furniture = {} -- Clear furniture on room load
+            Sentry.clothing = {} -- Clear clothing on room load
             for _, item in ipairs(gmcp.Char.Items.List.items) do
                 Sentry.sortItem(item)
             end
@@ -347,6 +423,8 @@ function Sentry.handleItems(event)
         if gmcp.Char.Items.Remove.location == "room" then
             Sentry.denizens[item.id] = nil
             Sentry.items[item.id] = nil
+            Sentry.furniture[item.id] = nil -- Remove furniture if destroyed
+            Sentry.clothing[item.id] = nil -- Remove clothing if destroyed/taken
         end
     end
     Sentry.updateUI()
