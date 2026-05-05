@@ -13,7 +13,8 @@ Sentry.config = Sentry.config or {}
 
 Sentry.silentProbing = false
 Sentry.probeQueue = {}
-Sentry.silentRunelist = 0 
+Sentry.silentRunelist = 0
+Sentry.isGlanced = false
 
 -- =========================================================================
 -- 1. CONFIGURATION
@@ -111,32 +112,45 @@ function Sentry.sortItem(item)
     else
         local nameLower = item.name:lower()
         
-        -- 1. Check for Sigils FIRST
+        -- 1. Check for Sigils
         local isSigil = false
         if nameLower:find("sigil") then
             for sigilType, data in pairs(Sentry.sigilData) do
                 if nameLower:find(sigilType .. " sigil") then
                     isSigil = true
-                    -- Route directly to effects, passing the physical item data
                     Sentry.addEffect("sigil_" .. item.id, item.name .. " (" .. data.effect .. ")", data.color, item)
                     
-                    -- NEW: Queue the sigil for a silent probe to check for flame traps
                     local inQueue = false
                     for _, queuedID in ipairs(Sentry.probeQueue) do
                         if queuedID == item.id then inQueue = true; break end
                     end
-                    if not inQueue then
-                        table.insert(Sentry.probeQueue, item.id)
-                    end
-                    
+                    if not inQueue then table.insert(Sentry.probeQueue, item.id) end
                     break
                 end
             end
         end
         
-        if isSigil then return end -- Stop sorting, it is safely in the Effects list
+        -- 2. Check for Totems
+        local isTotem = false
+        if nameLower:find("totem") then
+            isTotem = true
+            -- Route to effects (using cyan to match the runes)
+            Sentry.addEffect("totem_" .. item.id, item.name, "cyan", item)
+            
+            -- Queue for silent probing if we don't have its runes yet
+            if not item.runes then
+                local inQueue = false
+                for _, queuedID in ipairs(Sentry.probeQueue) do
+                    if queuedID == item.id then inQueue = true; break end
+                end
+                if not inQueue then table.insert(Sentry.probeQueue, item.id) end
+            end
+        end
+        
+        -- Stop sorting if it was a sigil or totem
+        if isSigil or isTotem then return end
 
-        -- 2. Regular Sorting
+        -- 3. Regular Sorting (Furniture, Clothing, Items)
         local isFurniture = false
         local isClothing = false
         
@@ -252,8 +266,11 @@ function Sentry.updateUI()
 
     -- SECTION 0: ROOM NAME
     if gmcp and gmcp.Room and gmcp.Room.Info and gmcp.Room.Info.name then
+        local headerText = gmcp.Room.Info.name
+        if Sentry.isGlanced then headerText = headerText .. " <white>(Glanced)" end
+        
         Sentry.console:cecho("<white>== Location ==<reset>\n")
-        Sentry.console:cecho("<white><yellow>" .. gmcp.Room.Info.name .."<white><reset>\n")
+        Sentry.console:cecho("<white><yellow>" .. headerText .."<white><reset>\n")
         isFirstSection = false
     end
 
@@ -264,29 +281,25 @@ function Sentry.updateUI()
         for name, p in pairs(Sentry.players) do
             local tCmd = Sentry.config.targetCmd .. name
             local pCmd = Sentry.config.probeCmd .. name
-            
-            -- Pass nil for ID since players don't use them here
             local pColor = Sentry.getColor("player", name, nil, "<cyan>")
             
             Sentry.console:cechoLink("<white>[<red>T<white>]", [[send("]]..tCmd..[[", false)]], "Target " .. name, true)
-            Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. name, true)
+            if not Sentry.isGlanced then
+                Sentry.console:cecho(" ")
+                Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. name, true)
+            end
             Sentry.console:cecho(" " .. pColor .. name .. "<reset>\n")
         end
         isFirstSection = false
     end
 
-    -- SECTION 2: DENIZENS (UPDATED FOR LOYALS)
+    -- SECTION 2: DENIZENS
     if tableHasContents(Sentry.denizens) then
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<yellow>=== DENIZENS ===<reset>\n")
         
-        -- Convert to array for sorting
         local sortedDenizens = {}
-        for id, d in pairs(Sentry.denizens) do
-            table.insert(sortedDenizens, d)
-        end
-        
-        -- Sort: Loyals first, then alphabetical
+        for id, d in pairs(Sentry.denizens) do table.insert(sortedDenizens, d) end
         table.sort(sortedDenizens, function(a, b)
             local aLoyal = Sentry.config.myLoyals[tostring(a.id)] == true
             local bLoyal = Sentry.config.myLoyals[tostring(b.id)] == true
@@ -299,18 +312,16 @@ function Sentry.updateUI()
             local readableTarget = Sentry.formatTarget(d.name, d.id)
             local tCmd = Sentry.config.targetCmd .. readableTarget
             local pCmd = Sentry.config.probeCmd .. readableTarget
-            
-            -- Pass the ID to the color router
             local dColor = Sentry.getColor("denizen", d.name, d.id, "<yellow>")
             
-            -- Append a text tag so they stand out clearly
             local suffix = ""
-            if Sentry.config.myLoyals[tostring(d.id)] then
-                suffix = " <white>(Loyal)"
-            end
+            if Sentry.config.myLoyals[tostring(d.id)] then suffix = " <white>(Loyal)" end
             
             Sentry.console:cechoLink("<white>[<red>T<white>]", [[send("]]..tCmd..[[", false)]], "Target " .. d.name, true)
-            Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. d.name, true)
+            if not Sentry.isGlanced then
+                Sentry.console:cecho(" ")
+                Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. d.name, true)
+            end
             Sentry.console:cecho(" " .. dColor .. d.name .. suffix .. "<reset>\n")
         end
         isFirstSection = false
@@ -323,34 +334,25 @@ function Sentry.updateUI()
         
         local sortedItems = {}
         for id, i in pairs(Sentry.items) do table.insert(sortedItems, i) end
-        
-        -- Simplified sort now that monoliths are moved
         table.sort(sortedItems, function(a, b) return a.name < b.name end)
 
         for _, i in ipairs(sortedItems) do
             local readableTarget = Sentry.formatTarget(i.name, i.id)
             local gCmd = Sentry.config.getCmd .. readableTarget
             local pCmd = Sentry.config.probeCmd .. readableTarget
-            
             local iColor = Sentry.getColor("item", i.name, i.id, "<green>")
             
             local suffix = ""
-            if i.direction then suffix = suffix .. " <white>(" .. i.direction:upper() .. ")" end
-            if i.runes then
-                local runeStrings = {}
-                for runeName, count in pairs(i.runes) do
-                    if count > 1 then table.insert(runeStrings, runeName .. "x" .. count)
-                    else table.insert(runeStrings, runeName) end
-                end
-                if #runeStrings > 0 then
-                    table.sort(runeStrings)
-                    suffix = suffix .. " <cyan>(" .. table.concat(runeStrings, ", ") .. ")"
-                end
-            end
+            if i.direction then suffix = " <white>(" .. i.direction:upper() .. ")" end
             
-            Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. i.name, true)
-            Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. i.name, true)
-            Sentry.console:cecho(" " .. iColor .. i.name .. suffix .. "<reset>\n")
+            if not Sentry.isGlanced then
+                Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. i.name, true)
+                Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. i.name, true)
+                Sentry.console:cecho(" ")
+            else
+                Sentry.console:cecho("<white>[<grey>-<white>] ") -- Visual spacer to align text
+            end
+            Sentry.console:cecho(iColor .. i.name .. suffix .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -369,10 +371,14 @@ function Sentry.updateUI()
             local gCmd = Sentry.config.getCmd .. readableTarget
             local pCmd = Sentry.config.probeCmd .. readableTarget
             
-            -- We KEEP the Get button because dropped clothing can be picked up
-            Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. c.name, true)
-            Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. c.name, true)
-            Sentry.console:cecho(" <plum>" .. c.name .. "<reset>\n")
+            if not Sentry.isGlanced then
+                Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. c.name, true)
+                Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. c.name, true)
+                Sentry.console:cecho(" ")
+            else
+                Sentry.console:cecho("<white>[<grey>-<white>] ")
+            end
+            Sentry.console:cecho("<plum>" .. c.name .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -390,9 +396,13 @@ function Sentry.updateUI()
             local readableTarget = Sentry.formatTarget(f.name, f.id)
             local pCmd = Sentry.config.probeCmd .. readableTarget
             
-            -- We skip the Get button because furniture cannot be picked up
-            Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. f.name, true)
-            Sentry.console:cecho(" <LightSlateGrey>" .. f.name .. "<reset>\n")
+            if not Sentry.isGlanced then
+                Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. f.name, true)
+                Sentry.console:cecho(" ")
+            else
+                Sentry.console:cecho("<white>[<grey>-<white>] ")
+            end
+            Sentry.console:cecho("<LightSlateGrey>" .. f.name .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -402,51 +412,77 @@ function Sentry.updateUI()
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<magenta>=== EFFECTS ===<reset>\n")
         
-        -- Alphabetize effects so they don't jump around
         local sortedEffects = {}
         for id, data in pairs(Sentry.effects) do table.insert(sortedEffects, {id = id, data = data}) end
         table.sort(sortedEffects, function(a, b) return a.data.name < b.data.name end)
 
         for _, effect in ipairs(sortedEffects) do
             local data = effect.data
+            local suffix = ""
             
-            -- If it's a physical item (sigil), check for flame trap and draw buttons
-            if data.item then
+            if data.item and data.item.runes then
+                local runeStrings = {}
+                for runeName, count in pairs(data.item.runes) do
+                    if count > 1 then table.insert(runeStrings, count .. " " .. runeName)
+                    else table.insert(runeStrings, runeName) end
+                end
+                if #runeStrings > 0 then
+                    table.sort(runeStrings)
+                    suffix = " <cyan>(" .. table.concat(runeStrings, ", ") .. ")"
+                end
+            end
+            
+            -- If it's a physical item AND we aren't glancing, show active buttons
+            if data.item and not Sentry.isGlanced then
                 local readableTarget = Sentry.formatTarget(data.item.name, data.item.id)
-                
-                -- NEW: Render a red [X] if flamed, otherwise render the [G] button
                 if data.flamed then
-                    Sentry.console:cecho("<white>[<red>X<white>] <" .. data.color .. ">" .. data.name .. " <red>(Flamed)<reset>\n")
+                    Sentry.console:cecho("<white>[<red>X<white>] <" .. data.color .. ">" .. data.name .. suffix .. " <red>(Flamed)<reset>\n")
                 else
                     local gCmd = Sentry.config.getCmd .. readableTarget
                     Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. data.item.name, true)
-                    Sentry.console:cecho(" <" .. data.color .. ">" .. data.name .. "<reset>\n")
+                    Sentry.console:cecho(" <" .. data.color .. ">" .. data.name .. suffix .. "<reset>\n")
                 end
             else
-                -- Intangible effects (runes/vibrations) get the passive ~ icon
-                Sentry.console:cecho("<white>[<" .. data.color .. ">~<white>] <" .. data.color .. ">" .. data.name .. "<reset>\n")
+                -- Passive effects, OR physical items viewed remotely
+                Sentry.console:cecho("<white>[<" .. data.color .. ">~<white>] <" .. data.color .. ">" .. data.name .. suffix .. "<reset>\n")
             end
         end
     end
 end
 
 -- =========================================================================
--- 5. EVENT HANDLERS (GMCP)
+-- 5. EVENT HANDLERS (GMCP & SYSTEM)
 -- =========================================================================
+function Sentry.handleCommand(event, command)
+    -- Clean the command to avoid whitespace issues
+    local cmdLower = command:lower():gsub("^%s+", ""):gsub("%s+$", "")
+    
+    -- ONLY trigger glance mode if there is an argument (e.g., "glance sky")
+    if cmdLower:match("^glance%s+.+") then
+        Sentry.isGlanced = true
+        
+    -- Clear the flag on 'look', bare 'glance', 'quicklook', or standard movement
+    elseif cmdLower == "l" or cmdLower == "look" or cmdLower == "glance" or cmdLower == "ql" or cmdLower == "quicklook" or cmdLower:match("^[nsewud]$") or cmdLower:match("^[nsew][eo]$") or cmdLower == "in" or cmdLower == "out" then
+        Sentry.isGlanced = false
+    end
+end
+
 function Sentry.handleRoomChange(event)
     if event == "gmcp.Room.Info" then
         local currentRoom = gmcp.Room.Info.num
         
-        -- Only wipe effects and check runes if we ACTUALLY changed rooms
+        -- Only wipe effects and check runes if we ACTUALLY changed rooms physically
         if Sentry.lastRoom ~= currentRoom then
             Sentry.lastRoom = currentRoom
-            
             Sentry.effects = {}
             Sentry.updateUI()
             
-            if type(Sentry.silentRunelist) ~= "number" then Sentry.silentRunelist = 0 end
-            Sentry.silentRunelist = Sentry.silentRunelist + 1
-            send("runelist", false)
+            -- NEW: Bypass the runelist command if we are just glancing
+            if not Sentry.isGlanced then
+                if type(Sentry.silentRunelist) ~= "number" then Sentry.silentRunelist = 0 end
+                Sentry.silentRunelist = Sentry.silentRunelist + 1
+                send("runelist", false)
+            end
         end
     end
 end
@@ -491,17 +527,20 @@ function Sentry.handleItems(event)
             Sentry.furniture[item.id] = nil
             Sentry.clothing[item.id] = nil 
             
-            -- NEW: Erase the sigil from the effects table if it leaves the room
-            if Sentry.hasEffect("sigil_" .. item.id) then
-                Sentry.removeEffect("sigil_" .. item.id)
-            end
+            if Sentry.hasEffect("sigil_" .. item.id) then Sentry.removeEffect("sigil_" .. item.id) end
+            if Sentry.hasEffect("totem_" .. item.id) then Sentry.removeEffect("totem_" .. item.id) end
         end
     end
     Sentry.updateUI()
     
-    -- Process the probe queue SAFELY after the room prompt clears
+    -- NEW: Clear the queue and abort silent probes if glancing
+    if Sentry.isGlanced then 
+        Sentry.probeQueue = {}
+        return 
+    end
+    
+    -- Process the probe queue SAFELY using a time-based silencing window
     if #Sentry.probeQueue > 0 then
-        -- Copy the queue into a temporary table so we can clear the main one
         Sentry.activeProbes = Sentry.probeQueue
         Sentry.probeQueue = {} 
         
@@ -512,8 +551,8 @@ function Sentry.handleItems(event)
             end
             Sentry.activeProbes = {}
             
-            -- Turn it off when the NEXT prompt (the probe response) arrives
-            tempPromptTrigger(function() Sentry.silentProbing = false end, 1)
+            -- Close the silencing window after 0.5 seconds (bulletproof against early prompts)
+            tempTimer(0.5, function() Sentry.silentProbing = false end)
         end)
     end
 end
@@ -715,7 +754,6 @@ function Sentry.createTriggers()
     table.insert(Sentry.triggers, tempRegexTrigger("^This .* wall is made of .*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     table.insert(Sentry.triggers, tempRegexTrigger("^It towers above you.*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     table.insert(Sentry.triggers, tempRegexTrigger("^It weighs about .* pounds\\.$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
-    table.insert(Sentry.triggers, tempPromptTrigger([[ Sentry.silentProbing = false ]], 1))
 
     -- ==========================================
     -- TOTEM PROBE PARSER (Native Achaea Text)
@@ -726,17 +764,14 @@ function Sentry.createTriggers()
     ))
 
     -- 2. Catch the native slot lines and count them
-    table.insert(Sentry.triggers, tempRegexTrigger("is sketched into slot", 
+    table.insert(Sentry.triggers, tempRegexTrigger("is sketched in(?:to)? slot", 
         [[
-            -- Gag it immediately if we are silently probing
             if Sentry.silentProbing then deleteLine() end
             
             local lineLower = line:lower()
             local runeName = nil
             
-            -- Scan the raw line against our rune dictionary
             for key, data in pairs(Sentry.runeData) do
-                -- Account for slight text variations between your runelist and totem descriptions
                 local searchKey = key
                 if key == "stickman" then searchKey = "stick man" end
                 if key == "upwards-pointing arrow" then searchKey = "upward-pointing arrow" end
@@ -748,10 +783,11 @@ function Sentry.createTriggers()
             end
             
             if runeName then
-                for id, item in pairs(Sentry.items) do
-                    if item.name:lower():find("totem") then
-                        Sentry.items[id].runes = Sentry.items[id].runes or {}
-                        Sentry.items[id].runes[runeName] = (Sentry.items[id].runes[runeName] or 0) + 1
+                -- Look for the totem in the effects table instead of items!
+                for id, effect in pairs(Sentry.effects) do
+                    if id:find("^totem_") then
+                        effect.item.runes = effect.item.runes or {}
+                        effect.item.runes[runeName] = (effect.item.runes[runeName] or 0) + 1
                         Sentry.updateUI()
                         break 
                     end
@@ -802,10 +838,10 @@ function Sentry.createTriggers()
     ))
 
     -- 3. Gag the extra sigil spam during silent probes 
-    -- (The distinctive mark and usefulness lines are already handled by the totem gags!)
-    table.insert(Sentry.triggers, tempRegexTrigger("^Made of a flat black metal, you can feel this small, rectangular sigil.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    -- (The broad regex catches monoliths, eyes, cubes, and keys dynamically!)
+    table.insert(Sentry.triggers, tempRegexTrigger("^Made (?:of|from) .*, .* sigil.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     table.insert(Sentry.triggers, tempRegexTrigger("^It weighs \\d+ ounce\\(s\\)\\.$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
-    
+
     -- ==========================================
     -- ENVIRONMENTAL EFFECTS
     -- ==========================================
@@ -882,6 +918,7 @@ table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Room.RemovePlaye
 table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Items.List", "Sentry.handleItems"))
 table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Items.Add", "Sentry.handleItems"))
 table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Items.Remove", "Sentry.handleItems"))
+table.insert(Sentry.events, registerAnonymousEventHandler("sysDataSendRequest", "Sentry.handleCommand"))
 
 Sentry.createTriggers()
 
