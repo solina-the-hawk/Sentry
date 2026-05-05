@@ -66,6 +66,16 @@ Sentry.runeData = {
     ["apple core"] = {name = "Loshre", effect = "Anorexia"}
 }
 
+-- =========================================================================
+-- SIGIL DICTIONARY
+-- =========================================================================
+Sentry.sigilData = {
+    ["cube"] = {effect = "Destroy Vibrations", color = "magenta"},
+    ["eye"] = {effect = "Block Souls", color = "magenta"},
+    ["key"] = {effect = "Lock Doors", color = "magenta"},
+    ["monolith"] = {effect = "Block Teleport", color = "red"},
+}
+
 -- State variables for the runelist parser
 Sentry.parsingRunes = false
 Sentry.dashCount = 0
@@ -99,9 +109,36 @@ function Sentry.sortItem(item)
     if item.attrib and item.attrib:find("m") and not item.attrib:find("d") then
         Sentry.denizens[item.id] = item
     else
+        local nameLower = item.name:lower()
+        
+        -- 1. Check for Sigils FIRST
+        local isSigil = false
+        if nameLower:find("sigil") then
+            for sigilType, data in pairs(Sentry.sigilData) do
+                if nameLower:find(sigilType .. " sigil") then
+                    isSigil = true
+                    -- Route directly to effects, passing the physical item data
+                    Sentry.addEffect("sigil_" .. item.id, item.name .. " (" .. data.effect .. ")", data.color, item)
+                    
+                    -- NEW: Queue the sigil for a silent probe to check for flame traps
+                    local inQueue = false
+                    for _, queuedID in ipairs(Sentry.probeQueue) do
+                        if queuedID == item.id then inQueue = true; break end
+                    end
+                    if not inQueue then
+                        table.insert(Sentry.probeQueue, item.id)
+                    end
+                    
+                    break
+                end
+            end
+        end
+        
+        if isSigil then return end -- Stop sorting, it is safely in the Effects list
+
+        -- 2. Regular Sorting
         local isFurniture = false
         local isClothing = false
-        local nameLower = item.name:lower()
         
         for _, kw in ipairs(Sentry.config.furnitureKeywords) do
             if nameLower:find("%f[%a]" .. kw .. "%f[%A]") then
@@ -125,7 +162,7 @@ function Sentry.sortItem(item)
             Sentry.items[item.id] = item
         end
         
-        -- UPDATED: Added 'not item.runes' to prevent infinite totem probing
+        -- Queue walls/totems for probing (Monoliths no longer trigger this)
         if (nameLower:find("wall of") and not item.direction) or (nameLower:find("totem") and not item.runes) then
             local inQueue = false
             for _, queuedID in ipairs(Sentry.probeQueue) do
@@ -138,9 +175,9 @@ function Sentry.sortItem(item)
     end
 end
 
-function Sentry.addEffect(id, displayName, color)
+function Sentry.addEffect(id, displayName, color, sourceItem)
     color = color or "white"
-    Sentry.effects[id] = { name = displayName, color = color }
+    Sentry.effects[id] = { name = displayName, color = color, item = sourceItem }
     Sentry.updateUI()
 end
 
@@ -285,17 +322,10 @@ function Sentry.updateUI()
         Sentry.console:cecho("<green>=== ITEMS ===<reset>\n")
         
         local sortedItems = {}
-        for id, i in pairs(Sentry.items) do
-            table.insert(sortedItems, i)
-        end
+        for id, i in pairs(Sentry.items) do table.insert(sortedItems, i) end
         
-        table.sort(sortedItems, function(a, b)
-            local aMono = a.name:lower():find("monolith") ~= nil
-            local bMono = b.name:lower():find("monolith") ~= nil
-            if aMono and not bMono then return true end
-            if bMono and not aMono then return false end
-            return a.name < b.name
-        end)
+        -- Simplified sort now that monoliths are moved
+        table.sort(sortedItems, function(a, b) return a.name < b.name end)
 
         for _, i in ipairs(sortedItems) do
             local readableTarget = Sentry.formatTarget(i.name, i.id)
@@ -303,28 +333,17 @@ function Sentry.updateUI()
             local pCmd = Sentry.config.probeCmd .. readableTarget
             
             local iColor = Sentry.getColor("item", i.name, i.id, "<green>")
-            if i.name:lower():find("monolith") then iColor = "<red>" end
             
             local suffix = ""
-            
-            -- Direction Suffix (for walls)
-            if i.direction then 
-                suffix = suffix .. " <white>(" .. i.direction:upper() .. ")" 
-            end
-            
-            -- Rune Suffix (for totems)
+            if i.direction then suffix = suffix .. " <white>(" .. i.direction:upper() .. ")" end
             if i.runes then
                 local runeStrings = {}
                 for runeName, count in pairs(i.runes) do
-                    if count > 1 then
-                        table.insert(runeStrings, runeName .. "x" .. count)
-                    else
-                        table.insert(runeStrings, runeName)
-                    end
+                    if count > 1 then table.insert(runeStrings, runeName .. "x" .. count)
+                    else table.insert(runeStrings, runeName) end
                 end
-                
                 if #runeStrings > 0 then
-                    table.sort(runeStrings) -- Alphabetize the runes for quick reading
+                    table.sort(runeStrings)
                     suffix = suffix .. " <cyan>(" .. table.concat(runeStrings, ", ") .. ")"
                 end
             end
@@ -382,8 +401,31 @@ function Sentry.updateUI()
     if tableHasContents(Sentry.effects) then
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<magenta>=== EFFECTS ===<reset>\n")
-        for id, data in pairs(Sentry.effects) do
-            Sentry.console:cecho("<white>[<" .. data.color .. ">~<white>] <" .. data.color .. ">" .. data.name .. "<reset>\n")
+        
+        -- Alphabetize effects so they don't jump around
+        local sortedEffects = {}
+        for id, data in pairs(Sentry.effects) do table.insert(sortedEffects, {id = id, data = data}) end
+        table.sort(sortedEffects, function(a, b) return a.data.name < b.data.name end)
+
+        for _, effect in ipairs(sortedEffects) do
+            local data = effect.data
+            
+            -- If it's a physical item (sigil), check for flame trap and draw buttons
+            if data.item then
+                local readableTarget = Sentry.formatTarget(data.item.name, data.item.id)
+                
+                -- NEW: Render a red [X] if flamed, otherwise render the [G] button
+                if data.flamed then
+                    Sentry.console:cecho("<white>[<red>X<white>] <" .. data.color .. ">" .. data.name .. " <red>(Flamed)<reset>\n")
+                else
+                    local gCmd = Sentry.config.getCmd .. readableTarget
+                    Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. data.item.name, true)
+                    Sentry.console:cecho(" <" .. data.color .. ">" .. data.name .. "<reset>\n")
+                end
+            else
+                -- Intangible effects (runes/vibrations) get the passive ~ icon
+                Sentry.console:cecho("<white>[<" .. data.color .. ">~<white>] <" .. data.color .. ">" .. data.name .. "<reset>\n")
+            end
         end
     end
 end
@@ -446,8 +488,13 @@ function Sentry.handleItems(event)
         if gmcp.Char.Items.Remove.location == "room" then
             Sentry.denizens[item.id] = nil
             Sentry.items[item.id] = nil
-            Sentry.furniture[item.id] = nil -- Remove furniture if destroyed
-            Sentry.clothing[item.id] = nil -- Remove clothing if destroyed/taken
+            Sentry.furniture[item.id] = nil
+            Sentry.clothing[item.id] = nil 
+            
+            -- NEW: Erase the sigil from the effects table if it leaves the room
+            if Sentry.hasEffect("sigil_" .. item.id) then
+                Sentry.removeEffect("sigil_" .. item.id)
+            end
         end
     end
     Sentry.updateUI()
@@ -529,6 +576,12 @@ function Sentry.createTriggers()
         [[ 
             Sentry.parsingRunes = true
             Sentry.dashCount = 0
+            
+            -- NEW: Purge old runes from the effects table before reading the new list
+            for id in pairs(Sentry.effects) do
+                if id:find("^rune_") then Sentry.effects[id] = nil end
+            end
+            
             if type(Sentry.silentRunelist) == "number" and Sentry.silentRunelist > 0 then 
                 deleteLine() 
             end 
@@ -578,6 +631,11 @@ function Sentry.createTriggers()
     -- 4. Catch the "Empty" Runelist Response (Stripped anchors)
     table.insert(Sentry.triggers, tempRegexTrigger("You find no runes", 
         [[ 
+            for id in pairs(Sentry.effects) do
+                if id:find("^rune_") then Sentry.effects[id] = nil end
+            end
+            Sentry.updateUI()
+            
             if type(Sentry.silentRunelist) == "number" and Sentry.silentRunelist > 0 then 
                 deleteLine()
                 Sentry.silentRunelist = Sentry.silentRunelist - 1 
@@ -594,6 +652,11 @@ function Sentry.createTriggers()
         [[ Sentry.silentRunelist = Sentry.silentRunelist + 1; send("runelist", false) ]]
     ))
     
+    -- NEW: First-person smudge trigger
+    table.insert(Sentry.triggers, tempRegexTrigger("^You smudge the \\w+ rune off the ground\\.$", 
+        [[ Sentry.silentRunelist = Sentry.silentRunelist + 1; send("runelist", false) ]]
+    ))
+
     table.insert(Sentry.triggers, tempRegexTrigger("^(\\w+) sketches a rune.*$", 
         [[ Sentry.silentRunelist = Sentry.silentRunelist + 1; send("runelist", false) ]]
     ))
