@@ -34,7 +34,8 @@ You can put the Geyser window anywhere. However, we recommend going into Prefere
 
 ## In-Game Commands
 
-Sentry includes a few lightweight commands you can run directly from the Achaea input line:
+Sentry includes a lightweight command interface you can run directly from the Achaea input line:
 
-* `sentry toggle`: Hides or shows the Sentry UI window. 
-* `sentry loyals`: Manually updates your tracked loyal companions (also automatically updates on login).
+* `sentry` (or `sentry help`): Displays the in-game help menu and command list.
+* `sentry toggle`: Hides or shows the Sentry UI window on your screen.
+* `sentry loyals`: Manually updates your tracked loyal companions so they highlight correctly (this also automatically updates upon logging in).

@@ -578,14 +578,13 @@ function Sentry.createTriggers()
         ]]
     ))
 
-    table.insert(Sentry.triggers, tempRegexTrigger("^(.*?)(\\d+) is at .*\\.$", 
+    table.insert(Sentry.triggers, tempPromptTrigger(
         [[
             if Sentry.parsingLoyals then
-                local id = matches[3]
-                Sentry.config.myLoyals[tostring(id)] = true
-                Sentry.updateUI()
+                Sentry.parsingLoyals = false
+                cecho("\n<SteelBlue>[Sentry]:<reset> <white>Loyal IDs successfully tracked!<reset>\n")
             end
-        ]]
+        ]], 1
     ))
 
     table.insert(Sentry.triggers, tempPromptTrigger(
@@ -838,32 +837,65 @@ function Sentry.createTriggers()
 end
 
 -- =========================================================================
--- 7. VISIBILITY TOGGLE & ALIAS
+-- 7. COMMAND INTERFACE & ALIASES
 -- =========================================================================
 function Sentry.toggle()
     Sentry.config.visible = not Sentry.config.visible
     
     if Sentry.config.visible then
         Sentry.container:show()
-        cecho("\n<green>Sentry:<reset> GUI is now <green>VISIBLE<reset>.\n")
+        cecho("\n<SteelBlue>[Sentry]:<reset> <white>GUI is now <gold>VISIBLE<white>.<reset>\n")
     else
         Sentry.container:hide()
-        cecho("\n<green>Sentry:<reset> GUI is now <red>HIDDEN<reset>.\n")
+        cecho("\n<SteelBlue>[Sentry]:<reset> <white>GUI is now <gold>HIDDEN<white>.<reset>\n")
     end
 end
 
-if Sentry.toggleAlias then killAlias(Sentry.toggleAlias) end
-Sentry.toggleAlias = tempAlias("^sentry toggle$", [[ Sentry.toggle() ]])
+function Sentry.showHelp()
+    cecho("\n<SteelBlue>=======================================================================<reset>")
+    cecho("\n<SteelBlue>                         S E N T R Y   H E L P                         <reset>")
+    cecho("\n<SteelBlue>=======================================================================<reset>\n")
+    cecho("\n<white>Sentry is a tactical combat and situational awareness UI. It filters<reset>")
+    cecho("\n<white>and organizes room data, providing interactive links while silencing<reset>")
+    cecho("\n<white>spammy environment and hazard descriptions.<reset>\n")
 
-if Sentry.loyalsAlias then killAlias(Sentry.loyalsAlias) end
-Sentry.loyalsAlias = tempAlias("^sentry loyals$", 
-    [[ 
-        cecho("\n<green>Sentry:<reset> Updating loyal companions...\n")
+    cecho("\n<LightSkyBlue>In-Game Commands:<reset>")
+    cecho("\n  <gold>sentry help<reset>    - Displays this help menu.")
+    cecho("\n  <gold>sentry toggle<reset>  - Toggles hiding or showing the Sentry UI window.")
+    cecho("\n  <gold>sentry loyals<reset>  - Scans and tracks your loyal companions (adds cyan tint).")
+    
+    cecho("\n\n<LightSkyBlue>Configuration:<reset>")
+    cecho("\n  <white>Most permanent changes (like adding new clothing or furniture sorting<reset>")
+    cecho("\n  <white>keywords, changing command prefixes, or toggling NDB colors) are made<reset>")
+    cecho("\n  <white>by editing the <gold>Sentry.config<white> block at the top of the script.<reset>\n")
+
+    cecho("\n<SteelBlue>=======================================================================<reset>\n")
+end
+
+function Sentry.handleUserCommand(args)
+    local cmd = args:lower():match("^%s*(.-)%s*$")
+    
+    if cmd == "help" or cmd == "" then
+        Sentry.showHelp()
+    elseif cmd == "toggle" then
+        Sentry.toggle()
+    elseif cmd == "loyals" then
+        cecho("\n<SteelBlue>[Sentry]:<reset> <white>Updating loyal companions...<reset>\n")
         Sentry.config.myLoyals = {} 
-        send("loyals") 
-    ]]
-)
+        send("loyals", false) 
+    else
+        cecho("\n<SteelBlue>[Sentry]:<reset> <white>Unknown command. Type <gold>sentry help<white> for options.<reset>\n")
+    end
+end
 
+-- Master Alias: Route all user commands to the handler
+if Sentry.aliasHandler then killAlias(Sentry.aliasHandler) end
+Sentry.aliasHandler = tempAlias("^sentry(?: (.*))?$", [[
+    local args = matches[2] or "help"
+    Sentry.handleUserCommand(args)
+]])
+
+-- Ensure the UI matches the initial config state when the script first loads
 if Sentry.config.visible then
     Sentry.container:show()
 else
