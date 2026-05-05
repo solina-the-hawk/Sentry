@@ -455,6 +455,7 @@ function Sentry.updateUI()
             end
         end
     end
+    raiseEvent("Sentry.RoomUpdated")
 end
 
 -- =========================================================================
