@@ -1,4 +1,4 @@
-Sentry: Tactical Combat UI (v1.0.0)
+Sentry: Tactical Local Awareness UI (v1.0.0)
 
 A lightweight, zero-dependency tactical environment tracker for Achaea.
 Sentry cleanly organizes players, denizens, items, and environmental effects into a highly readable Geyser interface, pushing clutter out of your primary field of view.
