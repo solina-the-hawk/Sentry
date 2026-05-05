@@ -769,6 +769,44 @@ function Sentry.createTriggers()
     table.insert(Sentry.triggers, tempRegexTrigger("^It has \\d+ months of usefulness left\\.", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     
     -- ==========================================
+    -- SIGIL PROBE PARSER & TRAPS
+    -- ==========================================
+    -- 1. Catch the flame trap during a silent probe
+    table.insert(Sentry.triggers, tempRegexTrigger("^There is a flame-shaped sigil attached\\.", 
+        [[
+            if Sentry.silentProbing then deleteLine() end
+            
+            -- Find the first un-flamed sigil in our effects table and tag it
+            for id, effect in pairs(Sentry.effects) do
+                if id:find("^sigil_") and not effect.flamed then
+                    Sentry.effects[id].flamed = true
+                    Sentry.updateUI()
+                    break
+                end
+            end
+        ]]
+    ))
+
+    -- 2. Catch the manual pickup failure (in case you grab before a probe finishes)
+    table.insert(Sentry.triggers, tempRegexTrigger("^You quickly pull your hand back as a flame sigil on an? (.*?) singes your fingers\\.$", 
+        [[
+            local targetName = matches[2]:lower()
+            for id, effect in pairs(Sentry.effects) do
+                if id:find("^sigil_") and effect.item.name:lower():find(targetName) then
+                    Sentry.effects[id].flamed = true
+                    Sentry.updateUI()
+                    break
+                end
+            end
+        ]]
+    ))
+
+    -- 3. Gag the extra sigil spam during silent probes 
+    -- (The distinctive mark and usefulness lines are already handled by the totem gags!)
+    table.insert(Sentry.triggers, tempRegexTrigger("^Made of a flat black metal, you can feel this small, rectangular sigil.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^It weighs \\d+ ounce\\(s\\)\\.$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    
+    -- ==========================================
     -- ENVIRONMENTAL EFFECTS
     -- ==========================================
     table.insert(Sentry.triggers, tempRegexTrigger("^The air is filled with a humming vibration\\.$", 
