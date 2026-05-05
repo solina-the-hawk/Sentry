@@ -1,3 +1,7 @@
-Sentry: Room Awareness Display (v.0.5.0)
+Sentry: Tactical Combat UI (v1.0.0)
 
-Sentry is a room awareness display tool (GUI element?) which shows you what people, denizens, items, and effects are present in your current room.
+A lightweight, zero-dependency tactical environment tracker for Achaea.
+Sentry cleanly organizes players, denizens, items, and environmental effects into a highly readable Geyser interface, pushing clutter out of your primary field of view.
+Features include automated room sorting (separating clothing and furniture from important drops), silent background probing for totems and flame sigil traps, loyal companion tracking, and interactive clickable links for quick targeting and gathering.
+To configure your keyword sorters, UI visibility, or command prefixes, simply open the Sentry script in your Script Editor and adjust the configuration block at the top.
+You can easily hide the interface using the "sentry toggle" command, or refresh your tracked companions with "sentry loyals"!

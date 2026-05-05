@@ -1,5 +1,7 @@
 -- =========================================================================
--- 1. NAMESPACE, VARIABLES & CONFIG
+-- SENTRY: Tactical Combat UI
+-- A robust, zero-dependency situational awareness tracker for Achaea and Mudlet.
+-- Version: 1.0.0
 -- =========================================================================
 Sentry = Sentry or {}
 
@@ -17,23 +19,37 @@ Sentry.silentRunelist = 0
 Sentry.isGlanced = false
 
 -- =========================================================================
--- 1. CONFIGURATION
+-- Configuration
+-- This is the only section of the script you should be editing, unless you
+-- are confident you understand how things work and want to customize further!
 -- =========================================================================
+
+-- Command prefixes sent to the game when you click UI links. Include a trailing space!
 Sentry.config.targetCmd = "settarget " 
 Sentry.config.getCmd = "get "
 Sentry.config.probeCmd = "probe "
+
+-- Controls whether the Sentry UI window is visible on startup.
 Sentry.config.visible = true
 
+-- Set to true to utilize the Legacy package's NDB (Name Database) for player colors.
 Sentry.config.useNDBColors = true
+
+-- Set to true to highlight legendary mounts (dragons, griffons, pegasi) in purple.
 Sentry.config.colorMounts = false
+
+-- A dynamically populated table of your loyal companions. Do not edit manually. 
+-- Type 'sentry loyals' in game to update this list.
 Sentry.config.myLoyals = Sentry.config.myLoyals or {}
 
+-- Keywords used to automatically filter static objects into the Furniture section.
 Sentry.config.furnitureKeywords = {
     "bed", "dresser", "table", "statue", "chair", "desk", "rug", "tapestry",
     "cabinet", "sofa", "bench, stool", "shelf", "couch", "chandelier", "altar",
     "throne", "coffin", "fireplace",
 }
 
+-- Keywords used to automatically filter equippable items into the Clothing section.
 Sentry.config.clothingKeywords = {
     "boots", "sandals", "shoes", "blouse", "shirt", "tunic",
     "trousers", "pants", "skirt", "bra", "panties", "underwear",
@@ -42,7 +58,7 @@ Sentry.config.clothingKeywords = {
 }
 
 -- =========================================================================
--- RUNE DICTIONARY
+-- RUNE & SIGIL DICTIONARIES
 -- =========================================================================
 Sentry.runeData = {
     ["nightmare"] = {name = "Kena", effect = "Fear"},
@@ -67,9 +83,6 @@ Sentry.runeData = {
     ["apple core"] = {name = "Loshre", effect = "Anorexia"}
 }
 
--- =========================================================================
--- SIGIL DICTIONARY
--- =========================================================================
 Sentry.sigilData = {
     ["cube"] = {effect = "Destroy Vibrations", color = "magenta"},
     ["eye"] = {effect = "Block Souls", color = "magenta"},
@@ -77,7 +90,7 @@ Sentry.sigilData = {
     ["monolith"] = {effect = "Block Teleport", color = "red"},
 }
 
--- State variables for the runelist parser
+-- Internal state variables for the runelist parser
 Sentry.parsingRunes = false
 Sentry.dashCount = 0
 
@@ -86,7 +99,7 @@ Sentry.dashCount = 0
 -- =========================================================================
 Sentry.container = Sentry.container or Geyser.Container:new({
     name = "SentryContainer",
-    x = 0, y = "-50%",                  -- Anchored to the bottom left
+    x = 0, y = "-50%",
     width = "300px", height = "50%",
 })
 
@@ -112,7 +125,6 @@ function Sentry.sortItem(item)
     else
         local nameLower = item.name:lower()
         
-        -- 1. Check for Sigils
         local isSigil = false
         if nameLower:find("sigil") then
             for sigilType, data in pairs(Sentry.sigilData) do
@@ -130,14 +142,11 @@ function Sentry.sortItem(item)
             end
         end
         
-        -- 2. Check for Totems
         local isTotem = false
         if nameLower:find("totem") then
             isTotem = true
-            -- Route to effects (using cyan to match the runes)
             Sentry.addEffect("totem_" .. item.id, item.name, "cyan", item)
             
-            -- Queue for silent probing if we don't have its runes yet
             if not item.runes then
                 local inQueue = false
                 for _, queuedID in ipairs(Sentry.probeQueue) do
@@ -147,10 +156,8 @@ function Sentry.sortItem(item)
             end
         end
         
-        -- Stop sorting if it was a sigil or totem
         if isSigil or isTotem then return end
 
-        -- 3. Regular Sorting (Furniture, Clothing, Items)
         local isFurniture = false
         local isClothing = false
         
@@ -176,7 +183,6 @@ function Sentry.sortItem(item)
             Sentry.items[item.id] = item
         end
         
-        -- Queue walls/totems for probing (Monoliths no longer trigger this)
         if (nameLower:find("wall of") and not item.direction) or (nameLower:find("totem") and not item.runes) then
             local inQueue = false
             for _, queuedID in ipairs(Sentry.probeQueue) do
@@ -207,9 +213,7 @@ end
 -- =========================================================================
 -- COLOR ROUTER
 -- =========================================================================
--- UPDATED: Added 'id' argument to check against our loyals list
 function Sentry.getColor(category, name, id, defaultColor)
-    -- PLAYERS
     if category == "player" then
         if Sentry.config.useNDBColors and Legacy and Legacy.NDB and Legacy.NDB.color then
             local ndbColor = nil
@@ -226,11 +230,9 @@ function Sentry.getColor(category, name, id, defaultColor)
         end
         return defaultColor
 
-    -- DENIZENS
     elseif category == "denizen" then
-        -- Check if it's one of your specific loyals first
         if id and Sentry.config.myLoyals[tostring(id)] then
-            return "<cyan>" -- Gives your loyals a friendly blue color
+            return "<cyan>" 
         end
         
         local nameLower = name:lower()
@@ -242,7 +244,6 @@ function Sentry.getColor(category, name, id, defaultColor)
         
         return defaultColor
 
-    -- ITEMS
     elseif category == "item" then
         return defaultColor
     end
@@ -439,7 +440,6 @@ function Sentry.updateUI()
                 end
             end
             
-            -- If it's a physical item AND we aren't glancing, show active buttons
             if data.item and not Sentry.isGlanced then
                 local readableTarget = Sentry.formatTarget(data.item.name, data.item.id)
                 if data.flamed then
@@ -451,7 +451,6 @@ function Sentry.updateUI()
                     Sentry.console:cecho("<white>] <" .. data.color .. ">" .. data.name .. suffix .. "<reset>\n")
                 end
             else
-                -- Passive effects, OR physical items viewed remotely
                 Sentry.console:cecho("<white>[<" .. data.color .. ">~<white>] <" .. data.color .. ">" .. data.name .. suffix .. "<reset>\n")
             end
         end
@@ -462,14 +461,10 @@ end
 -- 5. EVENT HANDLERS (GMCP & SYSTEM)
 -- =========================================================================
 function Sentry.handleCommand(event, command)
-    -- Clean the command to avoid whitespace issues
     local cmdLower = command:lower():gsub("^%s+", ""):gsub("%s+$", "")
     
-    -- ONLY trigger glance mode if there is an argument (e.g., "glance sky")
     if cmdLower:match("^glance%s+.+") then
         Sentry.isGlanced = true
-        
-    -- Clear the flag on 'look', bare 'glance', 'quicklook', or standard movement
     elseif cmdLower == "l" or cmdLower == "look" or cmdLower == "glance" or cmdLower == "ql" or cmdLower == "quicklook" or cmdLower:match("^[nsewud]$") or cmdLower:match("^[nsew][eo]$") or cmdLower == "in" or cmdLower == "out" then
         Sentry.isGlanced = false
     end
@@ -479,13 +474,11 @@ function Sentry.handleRoomChange(event)
     if event == "gmcp.Room.Info" then
         local currentRoom = gmcp.Room.Info.num
         
-        -- Only wipe effects and check runes if we ACTUALLY changed rooms physically
         if Sentry.lastRoom ~= currentRoom then
             Sentry.lastRoom = currentRoom
             Sentry.effects = {}
             Sentry.updateUI()
             
-            -- NEW: Bypass the runelist command if we are just glancing
             if not Sentry.isGlanced then
                 if type(Sentry.silentRunelist) ~= "number" then Sentry.silentRunelist = 0 end
                 Sentry.silentRunelist = Sentry.silentRunelist + 1
@@ -516,8 +509,8 @@ function Sentry.handleItems(event)
         if gmcp.Char.Items.List.location == "room" then
             Sentry.denizens = {}
             Sentry.items = {}
-            Sentry.furniture = {} -- Clear furniture on room load
-            Sentry.clothing = {} -- Clear clothing on room load
+            Sentry.furniture = {}
+            Sentry.clothing = {}
             for _, item in ipairs(gmcp.Char.Items.List.items) do
                 Sentry.sortItem(item)
             end
@@ -541,13 +534,11 @@ function Sentry.handleItems(event)
     end
     Sentry.updateUI()
     
-    -- NEW: Clear the queue and abort silent probes if glancing
     if Sentry.isGlanced then 
         Sentry.probeQueue = {}
         return 
     end
     
-    -- Process the probe queue SAFELY using a time-based silencing window
     if #Sentry.probeQueue > 0 then
         Sentry.activeProbes = Sentry.probeQueue
         Sentry.probeQueue = {} 
@@ -559,7 +550,6 @@ function Sentry.handleItems(event)
             end
             Sentry.activeProbes = {}
             
-            -- Close the silencing window after 0.5 seconds (bulletproof against early prompts)
             tempTimer(0.5, function() Sentry.silentProbing = false end)
         end)
     end
@@ -575,14 +565,12 @@ function Sentry.createTriggers()
     Sentry.triggers = {}
 
     -- ==========================================
-    -- LOYALS PARSER (Manual/Login update)
+    -- LOYALS PARSER 
     -- ==========================================
-    -- Catch the header to turn on the parser
     table.insert(Sentry.triggers, tempRegexTrigger("^Your loyal companions are:$", 
         [[ Sentry.parsingLoyals = true ]]
     ))
 
-    -- Catch the "empty" response just in case
     table.insert(Sentry.triggers, tempRegexTrigger("^You have no loyal companions\\.$", 
         [[ 
             Sentry.config.myLoyals = {} 
@@ -590,22 +578,16 @@ function Sentry.createTriggers()
         ]]
     ))
 
-    -- Parse the individual loyal lines
-    -- Matches: "a pristine white falcon481629 is at (house) Private sleeping quarters."
     table.insert(Sentry.triggers, tempRegexTrigger("^(.*?)(\\d+) is at .*\\.$", 
         [[
             if Sentry.parsingLoyals then
-                -- matches[3] is the ID (the digits)
                 local id = matches[3]
                 Sentry.config.myLoyals[tostring(id)] = true
-                
-                -- Force a UI update so they immediately turn cyan if they are in the room!
                 Sentry.updateUI()
             end
         ]]
     ))
 
-    -- Use the prompt to close the parser
     table.insert(Sentry.triggers, tempPromptTrigger(
         [[
             if Sentry.parsingLoyals then
@@ -616,15 +598,13 @@ function Sentry.createTriggers()
     ))
 
     -- ==========================================
-    -- SMART RUNELIST PARSER (Debug Mode)
+    -- SMART RUNELIST PARSER 
     -- ==========================================
-    -- 1. Catch the Header (Stripped anchors)
     table.insert(Sentry.triggers, tempRegexTrigger("Type.+Owner", 
         [[ 
             Sentry.parsingRunes = true
             Sentry.dashCount = 0
             
-            -- NEW: Purge old runes from the effects table before reading the new list
             for id in pairs(Sentry.effects) do
                 if id:find("^rune_") then Sentry.effects[id] = nil end
             end
@@ -635,7 +615,6 @@ function Sentry.createTriggers()
         ]]
     ))
 
-    -- 2. Catch the Dashes
     table.insert(Sentry.triggers, tempRegexTrigger("-{20,}", 
         [[
             if Sentry.parsingRunes then
@@ -655,7 +634,6 @@ function Sentry.createTriggers()
         ]]
     ))
 
-    -- 3. Catch and Parse the Rune Line (Fixed greedy match)
     table.insert(Sentry.triggers, tempRegexTrigger("^A rune (?:resembling|like|shaped like) a[n]? (.+?)\\s{2,}(\\w+)", 
         [[
             if Sentry.parsingRunes then
@@ -675,7 +653,6 @@ function Sentry.createTriggers()
         ]]
     ))
 
-    -- 4. Catch the "Empty" Runelist Response (Stripped anchors)
     table.insert(Sentry.triggers, tempRegexTrigger("You find no runes", 
         [[ 
             for id in pairs(Sentry.effects) do
@@ -699,7 +676,6 @@ function Sentry.createTriggers()
         [[ Sentry.silentRunelist = Sentry.silentRunelist + 1; send("runelist", false) ]]
     ))
     
-    -- NEW: First-person smudge trigger
     table.insert(Sentry.triggers, tempRegexTrigger("^You smudge the \\w+ rune off the ground\\.$", 
         [[ Sentry.silentRunelist = Sentry.silentRunelist + 1; send("runelist", false) ]]
     ))
@@ -714,7 +690,6 @@ function Sentry.createTriggers()
     -- ==========================================
     -- WALL SPAWN & PROBE PARSER
     -- ==========================================
-    -- INSTANT DIRECTION: Catch the wall rising and immediately assign it
     table.insert(Sentry.triggers, tempRegexTrigger("^A wall of .* rises from the earth to block the exit to the (\\w+)\\.$", 
         [[
             local dir = matches[2]
@@ -728,7 +703,6 @@ function Sentry.createTriggers()
         ]]
     ))
 
-    -- BACKUP DIRECTION: Catch direction via Look/Probe
     table.insert(Sentry.triggers, tempRegexTrigger("^A (?:large )?wall of .* stands here, blocking passage to the (\\w+)\\.$", 
         [[
             local dir = matches[2]
@@ -757,21 +731,18 @@ function Sentry.createTriggers()
         ]]
     ))
 
-    -- GAGS: Stone Wall, Ice Wall, Weight, and Description Strings
     table.insert(Sentry.triggers, tempRegexTrigger("^This .* looks to be made of .*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     table.insert(Sentry.triggers, tempRegexTrigger("^This .* wall is made of .*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     table.insert(Sentry.triggers, tempRegexTrigger("^It towers above you.*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     table.insert(Sentry.triggers, tempRegexTrigger("^It weighs about .* pounds\\.$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
 
     -- ==========================================
-    -- TOTEM PROBE PARSER (Native Achaea Text)
+    -- TOTEM PROBE PARSER 
     -- ==========================================
-    -- 1. Catch the native header
     table.insert(Sentry.triggers, tempRegexTrigger("^It has the following runes sketched upon it:$", 
         [[ if Sentry.silentProbing then deleteLine() end ]]
     ))
 
-    -- 2. Catch the native slot lines and count them
     table.insert(Sentry.triggers, tempRegexTrigger("is sketched in(?:to)? slot", 
         [[
             if Sentry.silentProbing then deleteLine() end
@@ -791,7 +762,6 @@ function Sentry.createTriggers()
             end
             
             if runeName then
-                -- Look for the totem in the effects table instead of items!
                 for id, effect in pairs(Sentry.effects) do
                     if id:find("^totem_") then
                         effect.item.runes = effect.item.runes or {}
@@ -804,7 +774,6 @@ function Sentry.createTriggers()
         ]]
     ))
 
-    -- 3. Gag all the extra ownership and status spam
     table.insert(Sentry.triggers, tempRegexTrigger("^It is tuned against.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     table.insert(Sentry.triggers, tempRegexTrigger("^It bears the distinctive mark of.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     table.insert(Sentry.triggers, tempRegexTrigger("^You may use this item to parry with\\.", [[ if Sentry.silentProbing then deleteLine() end ]] ))
@@ -815,12 +784,10 @@ function Sentry.createTriggers()
     -- ==========================================
     -- SIGIL PROBE PARSER & TRAPS
     -- ==========================================
-    -- 1. Catch the flame trap during a silent probe
     table.insert(Sentry.triggers, tempRegexTrigger("^There is a flame-shaped sigil attached\\.", 
         [[
             if Sentry.silentProbing then deleteLine() end
             
-            -- Find the first un-flamed sigil in our effects table and tag it
             for id, effect in pairs(Sentry.effects) do
                 if id:find("^sigil_") and not effect.flamed then
                     Sentry.effects[id].flamed = true
@@ -831,7 +798,6 @@ function Sentry.createTriggers()
         ]]
     ))
 
-    -- 2. Catch the manual pickup failure (in case you grab before a probe finishes)
     table.insert(Sentry.triggers, tempRegexTrigger("^You quickly pull your hand back as a flame sigil on an? (.*?) singes your fingers\\.$", 
         [[
             local targetName = matches[2]:lower()
@@ -845,8 +811,6 @@ function Sentry.createTriggers()
         ]]
     ))
 
-    -- 3. Gag the extra sigil spam during silent probes 
-    -- (The broad regex catches monoliths, eyes, cubes, and keys dynamically!)
     table.insert(Sentry.triggers, tempRegexTrigger("^Made (?:of|from) .*, .* sigil.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
     table.insert(Sentry.triggers, tempRegexTrigger("^It weighs \\d+ ounce\\(s\\)\\.$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
 
@@ -888,21 +852,18 @@ function Sentry.toggle()
     end
 end
 
--- Create the dynamic alias
 if Sentry.toggleAlias then killAlias(Sentry.toggleAlias) end
 Sentry.toggleAlias = tempAlias("^sentry toggle$", [[ Sentry.toggle() ]])
 
--- NEW: Create the dynamic alias for updating loyals
 if Sentry.loyalsAlias then killAlias(Sentry.loyalsAlias) end
 Sentry.loyalsAlias = tempAlias("^sentry loyals$", 
     [[ 
         cecho("\n<green>Sentry:<reset> Updating loyal companions...\n")
-        Sentry.config.myLoyals = {} -- Clear the old list
+        Sentry.config.myLoyals = {} 
         send("loyals") 
     ]]
 )
 
--- Ensure the UI matches the initial config state when the script first loads
 if Sentry.config.visible then
     Sentry.container:show()
 else
@@ -910,7 +871,7 @@ else
 end
 
 -- =========================================================================
---8. EVENT REGISTRATION
+-- 8. EVENT REGISTRATION
 -- =========================================================================
 Sentry.events = Sentry.events or {}
 
@@ -929,5 +890,4 @@ table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Items.Remov
 table.insert(Sentry.events, registerAnonymousEventHandler("sysDataSendRequest", "Sentry.handleCommand"))
 
 Sentry.createTriggers()
-
 Sentry.updateUI()
