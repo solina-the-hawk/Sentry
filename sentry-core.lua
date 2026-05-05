@@ -283,12 +283,13 @@ function Sentry.updateUI()
             local pCmd = Sentry.config.probeCmd .. name
             local pColor = Sentry.getColor("player", name, nil, "<cyan>")
             
-            Sentry.console:cechoLink("<white>[<red>T<white>]", [[send("]]..tCmd..[[", false)]], "Target " .. name, true)
+            Sentry.console:cecho("<white>[")
+            Sentry.console:cechoLink("<red>T", [[send("]]..tCmd..[[", false)]], "Target " .. name, true)
             if not Sentry.isGlanced then
-                Sentry.console:cecho(" ")
-                Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. name, true)
+                Sentry.console:cecho("<white>|")
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. name, true)
             end
-            Sentry.console:cecho(" " .. pColor .. name .. "<reset>\n")
+            Sentry.console:cecho("<white>] " .. pColor .. name .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -317,12 +318,13 @@ function Sentry.updateUI()
             local suffix = ""
             if Sentry.config.myLoyals[tostring(d.id)] then suffix = " <white>(Loyal)" end
             
-            Sentry.console:cechoLink("<white>[<red>T<white>]", [[send("]]..tCmd..[[", false)]], "Target " .. d.name, true)
+            Sentry.console:cecho("<white>[")
+            Sentry.console:cechoLink("<red>T", [[send("]]..tCmd..[[", false)]], "Target " .. d.name, true)
             if not Sentry.isGlanced then
-                Sentry.console:cecho(" ")
-                Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. d.name, true)
+                Sentry.console:cecho("<white>|")
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. d.name, true)
             end
-            Sentry.console:cecho(" " .. dColor .. d.name .. suffix .. "<reset>\n")
+            Sentry.console:cecho("<white>] " .. dColor .. d.name .. suffix .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -346,11 +348,13 @@ function Sentry.updateUI()
             if i.direction then suffix = " <white>(" .. i.direction:upper() .. ")" end
             
             if not Sentry.isGlanced then
-                Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. i.name, true)
-                Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. i.name, true)
-                Sentry.console:cecho(" ")
+                Sentry.console:cecho("<white>[")
+                Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. i.name, true)
+                Sentry.console:cecho("<white>|")
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. i.name, true)
+                Sentry.console:cecho("<white>] ")
             else
-                Sentry.console:cecho("<white>[<grey>-<white>] ") -- Visual spacer to align text
+                Sentry.console:cecho("<white>[<grey>-<white>] ")
             end
             Sentry.console:cecho(iColor .. i.name .. suffix .. "<reset>\n")
         end
@@ -372,9 +376,11 @@ function Sentry.updateUI()
             local pCmd = Sentry.config.probeCmd .. readableTarget
             
             if not Sentry.isGlanced then
-                Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. c.name, true)
-                Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. c.name, true)
-                Sentry.console:cecho(" ")
+                Sentry.console:cecho("<white>[")
+                Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. c.name, true)
+                Sentry.console:cecho("<white>|")
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. c.name, true)
+                Sentry.console:cecho("<white>] ")
             else
                 Sentry.console:cecho("<white>[<grey>-<white>] ")
             end
@@ -397,8 +403,9 @@ function Sentry.updateUI()
             local pCmd = Sentry.config.probeCmd .. readableTarget
             
             if not Sentry.isGlanced then
-                Sentry.console:cechoLink("<white>[<DodgerBlue>P<white>]", [[send("]]..pCmd..[[", false)]], "Probe " .. f.name, true)
-                Sentry.console:cecho(" ")
+                Sentry.console:cecho("<white>[")
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. f.name, true)
+                Sentry.console:cecho("<white>] ")
             else
                 Sentry.console:cecho("<white>[<grey>-<white>] ")
             end
@@ -439,8 +446,9 @@ function Sentry.updateUI()
                     Sentry.console:cecho("<white>[<red>X<white>] <" .. data.color .. ">" .. data.name .. suffix .. " <red>(Flamed)<reset>\n")
                 else
                     local gCmd = Sentry.config.getCmd .. readableTarget
-                    Sentry.console:cechoLink("<white>[<gold>G<white>]", [[send("]]..gCmd..[[", false)]], "Get " .. data.item.name, true)
-                    Sentry.console:cecho(" <" .. data.color .. ">" .. data.name .. suffix .. "<reset>\n")
+                    Sentry.console:cecho("<white>[")
+                    Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. data.item.name, true)
+                    Sentry.console:cecho("<white>] <" .. data.color .. ">" .. data.name .. suffix .. "<reset>\n")
                 end
             else
                 -- Passive effects, OR physical items viewed remotely
