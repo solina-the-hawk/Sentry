@@ -540,24 +540,27 @@ function Sentry.handleItems(event)
     -- UI is updated exactly once per GMCP event after all sorting is complete
     Sentry.updateUI()
     
-    if Sentry.isGlanced then 
-        Sentry.probeQueue = {}
-        return 
-    end
-    
     if #Sentry.probeQueue > 0 then
-        -- Locally capture the queue so combat suite actions can't overwrite it
+        -- Locally capture the queue AND the room we were standing in
         local probesToRun = Sentry.probeQueue
+        local capturedRoom = Sentry.lastRoom
         Sentry.probeQueue = {} 
         
-        tempTimer(0.25, function()
+        -- Kill any pending probe timer so we don't spam overlapping commands
+        if Sentry.probeTimer then killTimer(Sentry.probeTimer) end
+        
+        Sentry.probeTimer = tempTimer(0.25, function()
+            -- ABORT completely if we have moved to a new room!
+            if Sentry.lastRoom ~= capturedRoom then return end
+            
             Sentry.silentProbing = true
             for _, id in ipairs(probesToRun) do
                 send("probe " .. id, false)
             end
             
-            -- Extended to 2.0s to safely swallow probe data even if your combat suite is causing network lag
-            tempTimer(2.0, function() Sentry.silentProbing = false end)
+            -- Kill any existing gag timer to reset the 2.0s window cleanly
+            if Sentry.gagTimer then killTimer(Sentry.gagTimer) end
+            Sentry.gagTimer = tempTimer(2.0, function() Sentry.silentProbing = false end)
         end)
     end
 end
@@ -574,33 +577,37 @@ function Sentry.createTriggers()
     -- ==========================================
     -- LOYALS PARSER 
     -- ==========================================
-    table.insert(Sentry.triggers, tempRegexTrigger("^Your loyal companions are:$", 
-        [[ Sentry.parsingLoyals = true ]]
+    table.insert(Sentry.triggers, tempRegexTrigger("^Your loyal companions are:", 
+        [[ 
+            Sentry.parsingLoyals = true 
+            
+            -- Dynamically spawn the closer so it works every time you use the command
+            -- We use [=[ ]=] to safely nest Lua code inside our string!
+            tempPromptTrigger([=[
+                if Sentry.parsingLoyals then
+                    Sentry.parsingLoyals = false
+                    Sentry.updateUI()
+                    cecho("\n<SteelBlue>[Sentry]:<reset> <white>Loyal IDs successfully tracked!<reset>\n")
+                end
+            ]=], 1)
+        ]]
     ))
 
-    table.insert(Sentry.triggers, tempRegexTrigger("^You have no loyal companions\\.$", 
+    table.insert(Sentry.triggers, tempRegexTrigger("^You have no loyal companions\\.", 
         [[ 
             Sentry.config.myLoyals = {} 
             Sentry.updateUI()
         ]]
     ))
 
-    table.insert(Sentry.triggers, tempPromptTrigger(
+    -- Ultra-permissive regex that completely ignores the end of the line
+    table.insert(Sentry.triggers, tempRegexTrigger("^(.*?)(\\d+) is ", 
         [[
             if Sentry.parsingLoyals then
-                Sentry.parsingLoyals = false
-                cecho("\n<SteelBlue>[Sentry]:<reset> <white>Loyal IDs successfully tracked!<reset>\n")
+                local id = matches[3]
+                Sentry.config.myLoyals[tostring(id)] = true
             end
-        ]], 1
-    ))
-
-    table.insert(Sentry.triggers, tempPromptTrigger(
-        [[
-            if Sentry.parsingLoyals then
-                Sentry.parsingLoyals = false
-                cecho("\n<green>Sentry:<reset> Loyal IDs successfully tracked!\n")
-            end
-        ]], 1
+        ]]
     ))
 
     -- ==========================================
