@@ -466,9 +466,12 @@ end
 function Sentry.handleCommand(event, command)
     local cmdLower = command:lower():gsub("^%s+", ""):gsub("%s+$", "")
     
-    if cmdLower:match("^glance%s+.+") then
+    -- ONLY trigger glance mode for vertical/flight glancing
+    if cmdLower == "glance sky" or cmdLower == "glance up" or cmdLower == "glance ground" or cmdLower == "glance down" then
         Sentry.isGlanced = true
-    elseif cmdLower == "l" or cmdLower == "look" or cmdLower == "glance" or cmdLower == "ql" or cmdLower == "quicklook" or cmdLower:match("^[nsewud]$") or cmdLower:match("^[nsew][eo]$") or cmdLower == "in" or cmdLower == "out" then
+        
+    -- Clear the flag on standard 'glance', 'look', 'ql', horizontal glances, or ANY movement
+    elseif cmdLower:match("^glance") or cmdLower == "l" or cmdLower == "look" or cmdLower == "ql" or cmdLower == "quicklook" or cmdLower:match("^[nsewud]$") or cmdLower:match("^[nsew][eo]$") or cmdLower == "in" or cmdLower == "out" then
         Sentry.isGlanced = false
     end
 end
