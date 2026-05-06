@@ -119,6 +119,21 @@ function Sentry.formatTarget(name, id)
     return firstWord .. id
 end
 
+function Sentry.addEffect(id, displayName, color, sourceItem, skipUpdate)
+    color = color or "white"
+    Sentry.effects[id] = { name = displayName, color = color, item = sourceItem }
+    if not skipUpdate then Sentry.updateUI() end
+end
+
+function Sentry.removeEffect(id, skipUpdate)
+    Sentry.effects[id] = nil
+    if not skipUpdate then Sentry.updateUI() end
+end
+
+function Sentry.hasEffect(id)
+    return Sentry.effects[id] ~= nil
+end
+
 function Sentry.sortItem(item)
     if item.attrib and item.attrib:find("m") and not item.attrib:find("d") then
         Sentry.denizens[item.id] = item
@@ -130,7 +145,8 @@ function Sentry.sortItem(item)
             for sigilType, data in pairs(Sentry.sigilData) do
                 if nameLower:find(sigilType .. " sigil") then
                     isSigil = true
-                    Sentry.addEffect("sigil_" .. item.id, item.name .. " (" .. data.effect .. ")", data.color, item)
+                    -- Pass true to skip the UI update during the sorting loop
+                    Sentry.addEffect("sigil_" .. item.id, item.name .. " (" .. data.effect .. ")", data.color, item, true)
                     
                     local inQueue = false
                     for _, queuedID in ipairs(Sentry.probeQueue) do
@@ -145,7 +161,8 @@ function Sentry.sortItem(item)
         local isTotem = false
         if nameLower:find("totem") then
             isTotem = true
-            Sentry.addEffect("totem_" .. item.id, item.name, "cyan", item)
+            -- Pass true to skip the UI update during the sorting loop
+            Sentry.addEffect("totem_" .. item.id, item.name, "cyan", item, true)
             
             if not item.runes then
                 local inQueue = false
@@ -193,21 +210,6 @@ function Sentry.sortItem(item)
             end
         end
     end
-end
-
-function Sentry.addEffect(id, displayName, color, sourceItem)
-    color = color or "white"
-    Sentry.effects[id] = { name = displayName, color = color, item = sourceItem }
-    Sentry.updateUI()
-end
-
-function Sentry.removeEffect(id)
-    Sentry.effects[id] = nil
-    Sentry.updateUI()
-end
-
-function Sentry.hasEffect(id)
-    return Sentry.effects[id] ~= nil
 end
 
 -- =========================================================================
@@ -529,10 +531,13 @@ function Sentry.handleItems(event)
             Sentry.furniture[item.id] = nil
             Sentry.clothing[item.id] = nil 
             
-            if Sentry.hasEffect("sigil_" .. item.id) then Sentry.removeEffect("sigil_" .. item.id) end
-            if Sentry.hasEffect("totem_" .. item.id) then Sentry.removeEffect("totem_" .. item.id) end
+            -- Pass true to skip redundant UI updates
+            if Sentry.hasEffect("sigil_" .. item.id) then Sentry.removeEffect("sigil_" .. item.id, true) end
+            if Sentry.hasEffect("totem_" .. item.id) then Sentry.removeEffect("totem_" .. item.id, true) end
         end
     end
+    
+    -- UI is updated exactly once per GMCP event after all sorting is complete
     Sentry.updateUI()
     
     if Sentry.isGlanced then 
@@ -541,17 +546,18 @@ function Sentry.handleItems(event)
     end
     
     if #Sentry.probeQueue > 0 then
-        Sentry.activeProbes = Sentry.probeQueue
+        -- Locally capture the queue so combat suite actions can't overwrite it
+        local probesToRun = Sentry.probeQueue
         Sentry.probeQueue = {} 
         
         tempTimer(0.25, function()
             Sentry.silentProbing = true
-            for _, id in ipairs(Sentry.activeProbes) do
+            for _, id in ipairs(probesToRun) do
                 send("probe " .. id, false)
             end
-            Sentry.activeProbes = {}
             
-            tempTimer(0.5, function() Sentry.silentProbing = false end)
+            -- Extended to 2.0s to safely swallow probe data even if your combat suite is causing network lag
+            tempTimer(2.0, function() Sentry.silentProbing = false end)
         end)
     end
 end
