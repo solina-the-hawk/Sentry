@@ -36,6 +36,8 @@ Sentry.config.mainVisible = true
 Sentry.config.selfVisible = true
 Sentry.config.targetVisible = false
 Sentry.config.shipVisible = false
+-- UI Design Toggles
+Sentry.config.showUIBorders = false  -- Set to false to hide the alignment borders
 
 -- Anti-Spam / Collapsing Toggles
 Sentry.config.collapseThreshold = 20  -- Auto-collapse if the room has >25 total things
@@ -43,11 +45,11 @@ Sentry.config.alwaysCollapse = false  -- If true, it will ALWAYS stack multiples
 
 -- Ship Info Visibility Toggles (Set to false to hide from the UI)
 Sentry.config.shipDisplay = {
-    crew = true,
+    crew = false,
     harbour = true,
     arena = false,  -- Disabled by default
     buoy = true,
-    float = false,  -- Disabled by default
+    float = true,  -- Disabled by default
     bell = false,   -- Disabled by default
     manoeuvres = true
 }
@@ -67,6 +69,27 @@ Sentry.config.clothingKeywords = {
     "trousers", "pants", "skirt", "bra", "panties", "underwear",
     "cloak", "cape", "robe", "gloves", "gauntlets", "hat", "helmet", "belt",
     "dress", "vest", "gown", "corset", "socks", "stockings", "jacket", "coat"
+}
+
+-- =========================================================================
+-- DEFENCE SORTING WEIGHTS
+-- Lower numbers appear first in the Self Status UI. Unlisted items default to 99.
+-- =========================================================================
+Sentry.config.defenceWeights = {
+    -- 1. Tactical Afflictions
+    ["deafness"] = 1, ["blindness"] = 1, ["insomnia"] = 1,
+    
+    -- 2. Potion Buffs
+    ["levitating"] = 2, ["speed"] = 2,
+    
+    -- 3. Herb / Mineral Defences
+    ["fangbarrier"] = 3, ["kola"] = 3,
+    
+    -- 4. Vision Skills
+    ["thirdeye"] = 4, ["nightsight"] = 4, ["skywatch"] = 4, ["groundwatch"] = 4,
+    
+    -- 5. Class Skills
+    ["weathering"] = 5, ["blademastery"] = 5, ["gripping"] = 5
 }
 
 -- =========================================================================
@@ -123,8 +146,8 @@ Sentry.sigilData = {
 -- =========================================================================
 Sentry.container = Sentry.container or Geyser.Container:new({
     name = "SentryContainer",
-    x = "5px", y = "66%",
-    width = "350px", height = "33%",
+    x = "2px", y = "66%",
+    width = "350px", height = "30%",
 })
 
 Sentry.console = Sentry.console or Geyser.MiniConsole:new({
@@ -136,8 +159,8 @@ Sentry.console = Sentry.console or Geyser.MiniConsole:new({
 
 Sentry.selfContainer = Sentry.selfContainer or Geyser.Container:new({
     name = "SentrySelfContainer",
-    x = "5px", y = "33%",
-    width = "350px", height = "33%",
+    x = "2px", y = "33%",
+    width = "350px", height = "30%",
 })
 
 Sentry.selfConsole = Sentry.selfConsole or Geyser.MiniConsole:new({
@@ -149,8 +172,8 @@ Sentry.selfConsole = Sentry.selfConsole or Geyser.MiniConsole:new({
 
 Sentry.targetContainer = Sentry.targetContainer or Geyser.Container:new({
     name = "SentryTargetContainer",
-    x = "5px", y = "2px",
-    width = "350px", height = "33%",
+    x = "2px", y = "2px",
+    width = "350px", height = "30%",
 })
 
 Sentry.targetConsole = Sentry.targetConsole or Geyser.MiniConsole:new({
@@ -163,8 +186,8 @@ Sentry.targetConsole = Sentry.targetConsole or Geyser.MiniConsole:new({
 -- Ship UI occupies the exact same space as Target UI
 Sentry.shipContainer = Sentry.shipContainer or Geyser.Container:new({
     name = "SentryShipContainer",
-    x = "5px", y = "2px",
-    width = "350px", height = "33%",
+    x = "2px", y = "2px",
+    width = "350px", height = "20%",
 })
 
 Sentry.shipConsole = Sentry.shipConsole or Geyser.MiniConsole:new({
@@ -174,6 +197,22 @@ Sentry.shipConsole = Sentry.shipConsole or Geyser.MiniConsole:new({
     color = "black",
 }, Sentry.shipContainer)
 
+-- =========================================================================
+-- APPLY UI STYLING (ALIGNMENT HIGHLIGHTS)
+-- =========================================================================
+if Sentry.config.showUIBorders then
+    -- Tint the background to dark grey (R, G, B) to reveal container bounds
+    Sentry.console:setColor(25, 25, 25)
+    Sentry.selfConsole:setColor(25, 25, 25)
+    Sentry.targetConsole:setColor(25, 25, 25)
+    Sentry.shipConsole:setColor(25, 25, 25)
+else
+    -- Revert back to pure black/transparent
+    Sentry.console:setColor(0, 0, 0)
+    Sentry.selfConsole:setColor(0, 0, 0)
+    Sentry.targetConsole:setColor(0, 0, 0)
+    Sentry.shipConsole:setColor(0, 0, 0)
+end
 
 -- =========================================================================
 -- 3. HELPER FUNCTIONS
@@ -322,7 +361,7 @@ function Sentry.updateRoomUI()
     if gmcp and gmcp.Room and gmcp.Room.Info and gmcp.Room.Info.name then
         local headerText = gmcp.Room.Info.name
         if Sentry.isGlanced then headerText = headerText .. " <white>(Glanced)" end
-        Sentry.console:cecho("<white>== Location ==<reset>\n")
+        Sentry.console:cecho("\n<white><== MY LOCATION ==><reset>\n")
         Sentry.console:cecho("<white><yellow>" .. headerText .."<white><reset>\n")
         isFirstSection = false
     end
@@ -583,6 +622,8 @@ function Sentry.updateSelfUI()
     if not Sentry.selfConsole then return end
     Sentry.selfConsole:clear()
 
+    Sentry.selfConsole:cecho("\n<white><== MY STATUS ==><reset>\n\n")
+
     local hasMindseye = false
     if Legacy and Legacy.Curing and Legacy.Curing.Defs and Legacy.Curing.Defs.current then
         local defs = Legacy.Curing.Defs.current
@@ -598,7 +639,9 @@ function Sentry.updateSelfUI()
         for _, affData in ipairs(gmcp.Char.Afflictions.List) do
             local affNameLower = affData.name:lower()
             if hasMindseye and (affNameLower == "blindness" or affNameLower == "deafness") then
-                -- Skip! They are acting as tactical defences right now.
+                -- Skip tactical defences
+            elseif affNameLower == "insomnia" then
+                -- Skip tactical defences
             else
                 table.insert(activeAffs, affData.name:title())
             end
@@ -698,7 +741,18 @@ function Sentry.updateSelfUI()
             
             local sortedKeys = {}
             for k, _ in pairs(dataTable) do table.insert(sortedKeys, k) end
-            table.sort(sortedKeys)
+            
+            -- Custom sorting logic: Weights first, Alphabetical second
+            table.sort(sortedKeys, function(a, b)
+                local weightA = Sentry.config.defenceWeights[a:lower()] or 99
+                local weightB = Sentry.config.defenceWeights[b:lower()] or 99
+                
+                if weightA == weightB then
+                    return a < b
+                else
+                    return weightA < weightB
+                end
+            end)
             
             if #sortedKeys == 0 then
                 Sentry.selfConsole:cecho("<grey>None<reset>\n")
@@ -813,7 +867,7 @@ function Sentry.updateShipUI()
     local d = Sentry.shipData or {}
     local name = d.name or "Unknown Ship"
 
-    Sentry.shipConsole:cecho(string.format("<DeepSkyBlue>=== %s ===<reset>\n", name:upper()))
+    Sentry.shipConsole:cecho(string.format("<DeepSkyBlue><== %s ==><reset>\n", name:upper()))
     
     -- Identification & Ownership
     Sentry.shipConsole:cecho(string.format("<cyan>Type:  <white>%s\n", d.type or "?"))
