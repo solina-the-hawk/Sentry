@@ -41,6 +41,17 @@ Sentry.config.shipVisible = false
 Sentry.config.collapseThreshold = 20  -- Auto-collapse if the room has >25 total things
 Sentry.config.alwaysCollapse = false  -- If true, it will ALWAYS stack multiples
 
+-- Ship Info Visibility Toggles (Set to false to hide from the UI)
+Sentry.config.shipDisplay = {
+    crew = true,
+    harbour = true,
+    arena = false,  -- Disabled by default
+    buoy = true,
+    float = false,  -- Disabled by default
+    bell = false,   -- Disabled by default
+    manoeuvres = true
+}
+
 Sentry.config.useNDBColors = true
 Sentry.config.colorMounts = false
 Sentry.config.myLoyals = Sentry.config.myLoyals or {}
@@ -832,19 +843,30 @@ function Sentry.updateShipUI()
     Sentry.shipConsole:cecho(string.format("<white>Anchor: <yellow>%s <white>| Plank: <yellow>%s <white>| Lads: <yellow>%s\n",
         d.anchored or "?", d.plank or "?", d.ladders or "?"))
 
-    -- Status & Crew Row
-    Sentry.shipConsole:cecho(string.format("<white>Crew: <yellow>%s <white>| Harb: <yellow>%s <white>| Arena: <yellow>%s\n",
-        d.crew or "?", d.harbour or "?", d.arena or "?"))
+    -- Status & Crew Row (Dynamic)
+    local statusParts = {}
+    if Sentry.config.shipDisplay.crew then table.insert(statusParts, string.format("<white>Crew: <yellow>%s", d.crew or "?")) end
+    if Sentry.config.shipDisplay.harbour then table.insert(statusParts, string.format("<white>Harb: <yellow>%s", d.harbour or "?")) end
+    if Sentry.config.shipDisplay.arena then table.insert(statusParts, string.format("<white>Arena: <yellow>%s", d.arena or "?")) end
+    if #statusParts > 0 then Sentry.shipConsole:cecho(table.concat(statusParts, " <white>| ") .. "\n") end
         
-    -- Equipment Row (Shortening diving bell string if needed)
-    local bellStat = d.bell == "no diving bell" and "No" or (d.bell or "?")
-    Sentry.shipConsole:cecho(string.format("<white>Buoy: <yellow>%s <white>| Float: <yellow>%s <white>| Bell: <yellow>%s\n",
-        d.buoy or "?", d.float or "?", bellStat))
+    -- Equipment Row (Dynamic)
+    local equipParts = {}
+    if Sentry.config.shipDisplay.buoy then table.insert(equipParts, string.format("<white>Buoy: <yellow>%s", d.buoy or "?")) end
+    if Sentry.config.shipDisplay.float then table.insert(equipParts, string.format("<white>Float: <yellow>%s", d.float or "?")) end
+    if Sentry.config.shipDisplay.bell then 
+        local bellStat = d.bell == "no diving bell" and "No" or (d.bell or "?")
+        table.insert(equipParts, string.format("<white>Bell: <yellow>%s", bellStat)) 
+    end
+    if #equipParts > 0 then Sentry.shipConsole:cecho(table.concat(equipParts, " <white>| ") .. "\n") end
         
-    Sentry.shipConsole:cecho(string.format("<white>Manoeuvres: <yellow>%s\n\n", d.manoeuvres or "?"))
+    -- Manoeuvres (Dynamic)
+    if Sentry.config.shipDisplay.manoeuvres then
+        Sentry.shipConsole:cecho(string.format("<white>Manoeuvres: <yellow>%s\n", d.manoeuvres or "?"))
+    end
 
     -- Wind & Locale
-    Sentry.shipConsole:cecho(string.format("<cyan>Wind: <white>%s\n", d.wind or "?"))
+    Sentry.shipConsole:cecho(string.format("\n<cyan>Wind: <white>%s\n", d.wind or "?"))
     Sentry.shipConsole:cecho(string.format("<cyan>Loc:  <white>%s\n", d.locale or "?"))
 end
 
@@ -1378,3 +1400,20 @@ Sentry.updateRoomUI()
 Sentry.updateSelfUI()
 Sentry.updateTargetUI()
 Sentry.updateShipUI()
+
+-- =========================================================================
+-- LIVE RELOAD NUDGE
+-- Forces Geyser to redraw UIs when clicking "Save" in Mudlet
+-- =========================================================================
+local containersToNudge = {
+    Sentry.container, Sentry.selfContainer, 
+    Sentry.targetContainer, Sentry.shipContainer
+}
+
+for _, box in ipairs(containersToNudge) do
+    if box then
+        box:reposition()
+        box:hide()
+        box:show()
+    end
+end
