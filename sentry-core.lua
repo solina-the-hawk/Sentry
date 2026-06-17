@@ -1,7 +1,7 @@
 -- =========================================================================
--- SENTRY: Tactical Combat UI (v1.1.0)
+-- SENTRY: Tactical Combat UI (v1.2.0)
 -- A robust, zero-dependency situational awareness tracker for Achaea.
--- Now featuring Self Status and Target Status tracking!
+-- Now featuring Self Status, Target Status, and Ship Info tracking!
 -- =========================================================================
 Sentry = Sentry or {}
 
@@ -18,6 +18,12 @@ Sentry.probeQueue = {}
 Sentry.silentRunelist = 0
 Sentry.isGlanced = false
 
+-- Ship tracking variables
+Sentry.isOnShip = false
+Sentry.parsingShipInfo = false
+Sentry.silentShipInfo = false
+Sentry.shipData = Sentry.shipData or {}
+
 -- =========================================================================
 -- 1. CONFIGURATION
 -- =========================================================================
@@ -27,8 +33,9 @@ Sentry.config.probeCmd = "probe "
 
 -- UI Visibility States
 Sentry.config.mainVisible = true
-Sentry.config.selfVisible = false
+Sentry.config.selfVisible = true
 Sentry.config.targetVisible = false
+Sentry.config.shipVisible = false
 
 Sentry.config.useNDBColors = true
 Sentry.config.colorMounts = false
@@ -53,11 +60,11 @@ Sentry.config.clothingKeywords = {
 -- Expected items that drop will be highlighted in RED with a [!] warning.
 -- =========================================================================
 Sentry.config.expectedDefences = {
-    "blindness", "deafness", "insomnia", "thirdeye", "nightsight", "rebounding"
+    "blindness", "deafness", "insomnia", "thirdeye", "nightsight"
 }
 
 Sentry.config.expectedTattoos = {
-    "boartattoo", "moontattoo", "starburst", "mosstattoo"
+    "boartattoo", "moontattoo", "starburst", "mosstattoo", "belltattoo", "megalithtattoo", "oxtattoo", "mindseye"
 }
 
 -- Keywords to auto-filter unexpected/temporary tattoos into the Tattoo section
@@ -66,7 +73,6 @@ Sentry.config.tattooKeywords = {
     "tentacle", "hammer", "cloak", "starburst", "spider", "eye", "web", "belltattoo", "oxtattoo", "megalithtattoo"
 }
 
--- [Rune & Sigil Data truncated for brevity, assuming standard tables from core]
 Sentry.runeData = {
     ["nightmare"] = {name = "Kena", effect = "Fear"},
     ["lightning bolt"] = {name = "Uruz", effect = "Healing"},
@@ -100,11 +106,10 @@ Sentry.sigilData = {
 -- =========================================================================
 -- 2. GEYSER UI CREATION
 -- =========================================================================
--- Main Room UI (Right side, default)
 Sentry.container = Sentry.container or Geyser.Container:new({
     name = "SentryContainer",
-    x = 0, y = "-50%",
-    width = "300px", height = "50%",
+    x = "5px", y = "66%",
+    width = "300px", height = "33%",
 })
 
 Sentry.console = Sentry.console or Geyser.MiniConsole:new({
@@ -114,11 +119,10 @@ Sentry.console = Sentry.console or Geyser.MiniConsole:new({
     color = "black",
 }, Sentry.container)
 
--- Self Status UI (Top Left)
 Sentry.selfContainer = Sentry.selfContainer or Geyser.Container:new({
     name = "SentrySelfContainer",
-    x = "5px", y = 0,
-    width = "300px", height = "40%",
+    x = "5px", y = "33%",
+    width = "300px", height = "33%",
 })
 
 Sentry.selfConsole = Sentry.selfConsole or Geyser.MiniConsole:new({
@@ -128,11 +132,10 @@ Sentry.selfConsole = Sentry.selfConsole or Geyser.MiniConsole:new({
     color = "black",
 }, Sentry.selfContainer)
 
--- Target Status UI (Mid Left)
 Sentry.targetContainer = Sentry.targetContainer or Geyser.Container:new({
     name = "SentryTargetContainer",
-    x = "5px", y = "42%",
-    width = "300px", height = "35%",
+    x = "5px", y = "2px",
+    width = "300px", height = "33%",
 })
 
 Sentry.targetConsole = Sentry.targetConsole or Geyser.MiniConsole:new({
@@ -142,11 +145,24 @@ Sentry.targetConsole = Sentry.targetConsole or Geyser.MiniConsole:new({
     color = "black",
 }, Sentry.targetContainer)
 
+-- Ship UI occupies the exact same space as Target UI
+Sentry.shipContainer = Sentry.shipContainer or Geyser.Container:new({
+    name = "SentryShipContainer",
+    x = "5px", y = "2px",
+    width = "300px", height = "33%",
+})
+
+Sentry.shipConsole = Sentry.shipConsole or Geyser.MiniConsole:new({
+    name = "SentryShipConsole",
+    x = 0, y = 0,
+    width = "100%", height = "100%",
+    color = "black",
+}, Sentry.shipContainer)
+
 
 -- =========================================================================
 -- 3. HELPER FUNCTIONS
 -- =========================================================================
--- Used to align text in our MiniConsoles (ignores color tags!)
 function Sentry.padText(text, coloredText, targetLength)
     local currentLen = string.len(text)
     local spaces = targetLength - currentLen
@@ -176,7 +192,6 @@ function Sentry.hasEffect(id)
 end
 
 function Sentry.sortItem(item)
-    -- [Sorting logic remains identical to original Sentry script]
     if item.attrib and item.attrib:find("m") and not item.attrib:find("d") then
         Sentry.denizens[item.id] = item
     else
@@ -230,11 +245,40 @@ function Sentry.sortItem(item)
     end
 end
 
+function Sentry.getColor(category, name, id, defaultColor)
+    if category == "player" then
+        if Sentry.config.useNDBColors and Legacy and Legacy.NDB and Legacy.NDB.color then
+            local ndbColor = nil
+            if type(Legacy.NDB.color) == "function" then
+                ndbColor = Legacy.NDB.color(name:title())
+            elseif type(Legacy.NDB.color) == "table" then
+                ndbColor = Legacy.NDB.color[name:title()]
+            end
+
+            if ndbColor and ndbColor ~= "" then
+                if not ndbColor:match("^<.*>$") then ndbColor = "<" .. ndbColor .. ">" end
+                return ndbColor
+            end
+        end
+        return defaultColor
+
+    elseif category == "denizen" then
+        if id and Sentry.config.myLoyals[tostring(id)] then return "<cyan>" end
+        local nameLower = name:lower()
+        local isLegendaryMount = nameLower:find("pegasus") or nameLower:find("griffon") or nameLower:find("dragon")
+        if isLegendaryMount and Sentry.config.colorMounts then return "<purple>" end
+        return defaultColor
+    elseif category == "item" then
+        return defaultColor
+    end
+
+    return defaultColor
+end
+
 -- =========================================================================
 -- 4. UI UPDATERS
 -- =========================================================================
 
--- Main Room Awareness UI
 function Sentry.updateRoomUI()
     if not Sentry.console then return end
     Sentry.console:clear()
@@ -253,27 +297,182 @@ function Sentry.updateRoomUI()
         isFirstSection = false
     end
 
-    -- [Players, Denizens, Items, Clothing, Furniture, Effects loops remain identical to original Sentry]
     if tableHasContents(Sentry.players) then
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<cyan>=== PLAYERS ===<reset>\n")
         for name, p in pairs(Sentry.players) do
             local tCmd = Sentry.config.targetCmd .. name
             local pCmd = Sentry.config.probeCmd .. name
+            local pColor = Sentry.getColor("player", name, nil, "<cyan>")
+            
             Sentry.console:cecho("<white>[")
             Sentry.console:cechoLink("<red>T", [[send("]]..tCmd..[[", false)]], "Target " .. name, true)
             if not Sentry.isGlanced then
                 Sentry.console:cecho("<white>|")
                 Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. name, true)
             end
-            Sentry.console:cecho("<white>] <cyan>" .. name .. "<reset>\n")
+            Sentry.console:cecho("<white>] " .. pColor .. name .. "<reset>\n")
         end
         isFirstSection = false
     end
 
-    -- ... (Copy over the rest of the Room UI logic from your sentry-core.lua here exactly as it was) ...
-end
+    if tableHasContents(Sentry.denizens) then
+        if not isFirstSection then Sentry.console:cecho("\n") end
+        Sentry.console:cecho("<yellow>=== DENIZENS ===<reset>\n")
+        
+        local sortedDenizens = {}
+        for id, d in pairs(Sentry.denizens) do table.insert(sortedDenizens, d) end
+        table.sort(sortedDenizens, function(a, b)
+            local aLoyal = Sentry.config.myLoyals[tostring(a.id)] == true
+            local bLoyal = Sentry.config.myLoyals[tostring(b.id)] == true
+            if aLoyal and not bLoyal then return true end
+            if bLoyal and not aLoyal then return false end
+            return a.name < b.name
+        end)
 
+        for _, d in ipairs(sortedDenizens) do
+            local readableTarget = Sentry.formatTarget(d.name, d.id)
+            local tCmd = Sentry.config.targetCmd .. readableTarget
+            local pCmd = Sentry.config.probeCmd .. readableTarget
+            local dColor = Sentry.getColor("denizen", d.name, d.id, "<yellow>")
+            
+            local suffix = ""
+            if Sentry.config.myLoyals[tostring(d.id)] then suffix = " <white>(Loyal)" end
+            
+            Sentry.console:cecho("<white>[")
+            Sentry.console:cechoLink("<red>T", [[send("]]..tCmd..[[", false)]], "Target " .. d.name, true)
+            if not Sentry.isGlanced then
+                Sentry.console:cecho("<white>|")
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. d.name, true)
+            end
+            Sentry.console:cecho("<white>] " .. dColor .. d.name .. suffix .. "<reset>\n")
+        end
+        isFirstSection = false
+    end
+
+    if tableHasContents(Sentry.items) then
+        if not isFirstSection then Sentry.console:cecho("\n") end
+        Sentry.console:cecho("<green>=== ITEMS ===<reset>\n")
+        
+        local sortedItems = {}
+        for id, i in pairs(Sentry.items) do table.insert(sortedItems, i) end
+        table.sort(sortedItems, function(a, b) return a.name < b.name end)
+
+        for _, i in ipairs(sortedItems) do
+            local readableTarget = Sentry.formatTarget(i.name, i.id)
+            local gCmd = Sentry.config.getCmd .. readableTarget
+            local pCmd = Sentry.config.probeCmd .. readableTarget
+            local iColor = Sentry.getColor("item", i.name, i.id, "<green>")
+            
+            local suffix = ""
+            if i.direction then suffix = " <white>(" .. i.direction:upper() .. ")" end
+            
+            if not Sentry.isGlanced then
+                Sentry.console:cecho("<white>[")
+                Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. i.name, true)
+                Sentry.console:cecho("<white>|")
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. i.name, true)
+                Sentry.console:cecho("<white>] ")
+            else
+                Sentry.console:cecho("<white>[<grey>-<white>] ")
+            end
+            Sentry.console:cecho(iColor .. i.name .. suffix .. "<reset>\n")
+        end
+        isFirstSection = false
+    end
+
+    if tableHasContents(Sentry.clothing) then
+        if not isFirstSection then Sentry.console:cecho("\n") end
+        Sentry.console:cecho("<plum>=== CLOTHING ===<reset>\n")
+        
+        local sortedClothing = {}
+        for id, c in pairs(Sentry.clothing) do table.insert(sortedClothing, c) end
+        table.sort(sortedClothing, function(a, b) return a.name < b.name end)
+
+        for _, c in ipairs(sortedClothing) do
+            local readableTarget = Sentry.formatTarget(c.name, c.id)
+            local gCmd = Sentry.config.getCmd .. readableTarget
+            local pCmd = Sentry.config.probeCmd .. readableTarget
+            
+            if not Sentry.isGlanced then
+                Sentry.console:cecho("<white>[")
+                Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. c.name, true)
+                Sentry.console:cecho("<white>|")
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. c.name, true)
+                Sentry.console:cecho("<white>] ")
+            else
+                Sentry.console:cecho("<white>[<grey>-<white>] ")
+            end
+            Sentry.console:cecho("<plum>" .. c.name .. "<reset>\n")
+        end
+        isFirstSection = false
+    end
+
+    if tableHasContents(Sentry.furniture) then
+        if not isFirstSection then Sentry.console:cecho("\n") end
+        Sentry.console:cecho("<grey>=== FURNITURE ===<reset>\n")
+        
+        local sortedFurn = {}
+        for id, f in pairs(Sentry.furniture) do table.insert(sortedFurn, f) end
+        table.sort(sortedFurn, function(a, b) return a.name < b.name end)
+
+        for _, f in ipairs(sortedFurn) do
+            local readableTarget = Sentry.formatTarget(f.name, f.id)
+            local pCmd = Sentry.config.probeCmd .. readableTarget
+            
+            if not Sentry.isGlanced then
+                Sentry.console:cecho("<white>[")
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. f.name, true)
+                Sentry.console:cecho("<white>] ")
+            else
+                Sentry.console:cecho("<white>[<grey>-<white>] ")
+            end
+            Sentry.console:cecho("<LightSlateGrey>" .. f.name .. "<reset>\n")
+        end
+        isFirstSection = false
+    end
+
+    if tableHasContents(Sentry.effects) then
+        if not isFirstSection then Sentry.console:cecho("\n") end
+        Sentry.console:cecho("<magenta>=== EFFECTS ===<reset>\n")
+        
+        local sortedEffects = {}
+        for id, data in pairs(Sentry.effects) do table.insert(sortedEffects, {id = id, data = data}) end
+        table.sort(sortedEffects, function(a, b) return a.data.name < b.data.name end)
+
+        for _, effect in ipairs(sortedEffects) do
+            local data = effect.data
+            local suffix = ""
+            
+            if data.item and data.item.runes then
+                local runeStrings = {}
+                for runeName, count in pairs(data.item.runes) do
+                    if count > 1 then table.insert(runeStrings, count .. " " .. runeName)
+                    else table.insert(runeStrings, runeName) end
+                end
+                if #runeStrings > 0 then
+                    table.sort(runeStrings)
+                    suffix = " <cyan>(" .. table.concat(runeStrings, ", ") .. ")"
+                end
+            end
+            
+            if data.item and not Sentry.isGlanced then
+                local readableTarget = Sentry.formatTarget(data.item.name, data.item.id)
+                if data.flamed then
+                    Sentry.console:cecho("<white>[<red>X<white>] <" .. data.color .. ">" .. data.name .. suffix .. " <red>(Flamed)<reset>\n")
+                else
+                    local gCmd = Sentry.config.getCmd .. readableTarget
+                    Sentry.console:cecho("<white>[")
+                    Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. data.item.name, true)
+                    Sentry.console:cecho("<white>] <" .. data.color .. ">" .. data.name .. suffix .. "<reset>\n")
+                end
+            else
+                Sentry.console:cecho("<white>[<" .. data.color .. ">~<white>] <" .. data.color .. ">" .. data.name .. suffix .. "<reset>\n")
+            end
+        end
+    end
+    raiseEvent("Sentry.RoomUpdated")
+end
 
 -- =========================================================================
 -- SELF STATUS UI
@@ -282,12 +481,25 @@ function Sentry.updateSelfUI()
     if not Sentry.selfConsole then return end
     Sentry.selfConsole:clear()
 
+    local hasMindseye = false
+    if Legacy and Legacy.Curing and Legacy.Curing.Defs and Legacy.Curing.Defs.current then
+        local defs = Legacy.Curing.Defs.current
+        if defs["mindseye"] or defs["thirdeye"] then
+            hasMindseye = true
+        end
+    end
+
     -- 1. AFFLICTIONS
     Sentry.selfConsole:cecho("<red>=== CURRENT AFFLICTIONS ===<reset>\n")
     if gmcp and gmcp.Char and gmcp.Char.Afflictions and gmcp.Char.Afflictions.List then
         local activeAffs = {}
         for _, affData in ipairs(gmcp.Char.Afflictions.List) do
-            table.insert(activeAffs, affData.name:title())
+            local affNameLower = affData.name:lower()
+            if hasMindseye and (affNameLower == "blindness" or affNameLower == "deafness") then
+                -- Skip! They are acting as tactical defences right now.
+            else
+                table.insert(activeAffs, affData.name:title())
+            end
         end
 
         if #activeAffs == 0 then
@@ -322,17 +534,14 @@ function Sentry.updateSelfUI()
             return raw, colored
         end
 
-        -- Row 1: Head / Torso
         local r1, c1 = getLimbString("Head", limbs["head"])
         local r2, c2 = getLimbString("Torso", limbs["torso"])
         Sentry.selfConsole:cecho(Sentry.padText(r1, c1, 20) .. c2 .. "\n")
 
-        -- Row 2: Arms
         r1, c1 = getLimbString("L-Arm", limbs["left arm"])
         r2, c2 = getLimbString("R-Arm", limbs["right arm"])
         Sentry.selfConsole:cecho(Sentry.padText(r1, c1, 20) .. c2 .. "\n")
 
-        -- Row 3: Legs
         r1, c1 = getLimbString("L-Leg", limbs["left leg"])
         r2, c2 = getLimbString("R-Leg", limbs["right leg"])
         Sentry.selfConsole:cecho(Sentry.padText(r1, c1, 20) .. c2 .. "\n")
@@ -347,7 +556,6 @@ function Sentry.updateSelfUI()
     if Legacy and Legacy.Curing and Legacy.Curing.Defs and Legacy.Curing.Defs.current then
         local currentDefs = Legacy.Curing.Defs.current
         
-        -- Helper function to determine if a defence is actually a tattoo
         local function isTattoo(name)
             local lowerName = name:lower()
             for _, kw in ipairs(Sentry.config.tattooKeywords) do
@@ -359,7 +567,6 @@ function Sentry.updateSelfUI()
             return false
         end
 
-        -- Step A: Sort everything currently active into Defs or Tattoos
         for defName, isActive in pairs(currentDefs) do
             if isActive then
                 if isTattoo(defName) then
@@ -370,7 +577,6 @@ function Sentry.updateSelfUI()
             end
         end
         
-        -- Step B: Check for expected but missing Defences
         for _, expected in ipairs(Sentry.config.expectedDefences) do
             local titleName = expected:title()
             if not activeDefs[titleName] then
@@ -378,7 +584,6 @@ function Sentry.updateSelfUI()
             end
         end
         
-        -- Step C: Check for expected but missing Tattoos
         for _, expected in ipairs(Sentry.config.expectedTattoos) do
             local titleName = expected:title()
             if not activeTattoos[titleName] then
@@ -386,7 +591,6 @@ function Sentry.updateSelfUI()
             end
         end
         
-        -- Step D: Reusable rendering function for our 2-column layout
         local function renderSection(title, color, dataTable)
             Sentry.selfConsole:cecho("\n<" .. color .. ">=== " .. title .. " ===<reset>\n")
             
@@ -403,7 +607,6 @@ function Sentry.updateSelfUI()
                 local name1 = sortedKeys[i]
                 local name2 = sortedKeys[i+1]
                 
-                -- Formats the item based on whether it is active or missing
                 local function formatItem(name)
                     if not name then return "", "" end
                     if dataTable[name].status == "missing" then
@@ -416,13 +619,11 @@ function Sentry.updateSelfUI()
                 local raw1, col1 = formatItem(name1)
                 local raw2, col2 = formatItem(name2)
                 
-                -- Pad the first column so the second column aligns perfectly
                 local paddedCol1 = Sentry.padText(raw1, col1, 20)
                 Sentry.selfConsole:cecho(paddedCol1 .. col2 .. "\n")
             end
         end
         
-        -- Render the two distinct sections
         renderSection("ACTIVE DEFENCES", "cyan", activeDefs)
         renderSection("TATTOOS", "DodgerBlue", activeTattoos)
         
@@ -443,7 +644,7 @@ function Sentry.updateTargetUI()
     targetName = targetName:upper()
 
     -- 1. TARGET AFFLICTIONS
-    Sentry.selfConsole:cecho(string.format("<orange>=== %s'S AFFLICTIONS ===<reset>\n", targetName))
+    Sentry.targetConsole:cecho(string.format("<orange>=== %s'S AFFLICTIONS ===<reset>\n", targetName))
     if ak and ak.score then
         local activeAffs = {}
         for affName, score in pairs(ak.score) do
@@ -499,24 +700,506 @@ function Sentry.updateTargetUI()
     end
 end
 
+
+-- =========================================================================
+-- SHIP STATUS UI
+-- =========================================================================
+function Sentry.updateShipUI()
+    if not Sentry.shipConsole then return end
+    Sentry.shipConsole:clear()
+
+    local d = Sentry.shipData or {}
+    local name = d.name or "Unknown Ship"
+
+    Sentry.shipConsole:cecho(string.format("<DeepSkyBlue>=== %s ===<reset>\n", name:upper()))
+    
+    -- Identification & Ownership
+    Sentry.shipConsole:cecho(string.format("<cyan>Type:  <white>%s\n", d.type or "?"))
+    Sentry.shipConsole:cecho(string.format("<cyan>Flag:  <white>%s\n", d.flag or "?"))
+    Sentry.shipConsole:cecho(string.format("<cyan>Vis:   <white>%s\n", d.vis or "?"))
+    Sentry.shipConsole:cecho(string.format("<cyan>Owner: <white>%s <cyan>| Capt: <white>%s\n\n", d.owner or "?", d.captain or "?"))
+
+    -- Health Row
+    local s_color = (tonumber(d.sails) or 100) < 50 and "<red>" or "<green>"
+    local h_color = (tonumber(d.hull) or 100) < 50 and "<red>" or "<green>"
+    local sea_col = (d.seaworthy == "Seaworthy") and "<green>" or "<red>"
+    Sentry.shipConsole:cecho(string.format("<white>Sails: %s%s%% <white>| Hull: %s%s%% <white>| %s%s\n",
+        s_color, d.sails or "?", h_color, d.hull or "?", sea_col, d.seaworthy or "?"))
+
+    -- Hazards Row
+    local leak_c = (d.leaking == "Yes") and "<red>" or "<green>"
+    local fire_c = (d.fires == "Yes") and "<red>" or "<green>"
+    local rig_c = (d.riggings == "Clear") and "<green>" or "<red>"
+    Sentry.shipConsole:cecho(string.format("<white>Leaks: %s%s <white>| Fire: %s%s <white>| Rig: %s%s\n\n",
+        leak_c, d.leaking or "?", fire_c, d.fires or "?", rig_c, d.riggings or "?"))
+
+    -- Movement Row
+    Sentry.shipConsole:cecho(string.format("<white>Course: <yellow>%s <white>| Sail: <yellow>%s <white>| Row: <yellow>%s\n",
+        d.course or "?", d.sailing or "?", d.rowing or "?"))
+
+    -- Access Row
+    Sentry.shipConsole:cecho(string.format("<white>Anchor: <yellow>%s <white>| Plank: <yellow>%s <white>| Lads: <yellow>%s\n",
+        d.anchored or "?", d.plank or "?", d.ladders or "?"))
+
+    -- Status & Crew Row
+    Sentry.shipConsole:cecho(string.format("<white>Crew: <yellow>%s <white>| Harb: <yellow>%s <white>| Arena: <yellow>%s\n",
+        d.crew or "?", d.harbour or "?", d.arena or "?"))
+        
+    -- Equipment Row (Shortening diving bell string if needed)
+    local bellStat = d.bell == "no diving bell" and "No" or (d.bell or "?")
+    Sentry.shipConsole:cecho(string.format("<white>Buoy: <yellow>%s <white>| Float: <yellow>%s <white>| Bell: <yellow>%s\n",
+        d.buoy or "?", d.float or "?", bellStat))
+        
+    Sentry.shipConsole:cecho(string.format("<white>Manoeuvres: <yellow>%s\n\n", d.manoeuvres or "?"))
+
+    -- Wind & Locale
+    Sentry.shipConsole:cecho(string.format("<cyan>Wind: <white>%s\n", d.wind or "?"))
+    Sentry.shipConsole:cecho(string.format("<cyan>Loc:  <white>%s\n", d.locale or "?"))
+end
+
+-- =========================================================================
+-- 5. EVENT HANDLERS (GMCP & SYSTEM)
+-- =========================================================================
+function Sentry.handleCommand(event, command)
+    local cmdLower = command:lower():gsub("^%s+", ""):gsub("%s+$", "")
+    
+    if cmdLower == "glance sky" or cmdLower == "glance up" or cmdLower == "glance ground" or cmdLower == "glance down" then
+        Sentry.isGlanced = true
+    elseif cmdLower:match("^glance") or cmdLower == "l" or cmdLower == "look" or cmdLower == "ql" or cmdLower == "quicklook" or cmdLower:match("^[nsewud]$") or cmdLower:match("^[nsew][eo]$") or cmdLower == "in" or cmdLower == "out" then
+        Sentry.isGlanced = false
+    end
+end
+
+function Sentry.handleRoomChange(event)
+    if event == "gmcp.Room.Info" then
+        local currentRoom = gmcp.Room.Info.num
+        
+        if Sentry.lastRoom ~= currentRoom then
+            Sentry.lastRoom = currentRoom
+            Sentry.effects = {}
+            Sentry.updateRoomUI()
+            
+            if not Sentry.isGlanced then
+                if type(Sentry.silentRunelist) ~= "number" then Sentry.silentRunelist = 0 end
+                Sentry.silentRunelist = Sentry.silentRunelist + 1
+                send("runelist", false)
+            end
+        end
+    end
+end
+
+function Sentry.handlePlayers(event)
+    if event == "gmcp.Room.Players" then
+        Sentry.players = {}
+        for _, player in ipairs(gmcp.Room.Players) do
+            Sentry.players[player.name] = player
+        end
+    elseif event == "gmcp.Room.AddPlayer" then
+        local player = gmcp.Room.AddPlayer
+        Sentry.players[player.name] = player
+    elseif event == "gmcp.Room.RemovePlayer" then
+        local playerName = gmcp.Room.RemovePlayer
+        Sentry.players[playerName] = nil
+    end
+    Sentry.updateRoomUI()
+end
+
+function Sentry.handleItems(event)
+    if event == "gmcp.Char.Items.List" then
+        if gmcp.Char.Items.List.location == "room" then
+            Sentry.denizens = {}
+            Sentry.items = {}
+            Sentry.furniture = {}
+            Sentry.clothing = {}
+            for _, item in ipairs(gmcp.Char.Items.List.items) do
+                Sentry.sortItem(item)
+            end
+        end
+    elseif event == "gmcp.Char.Items.Add" then
+        local item = gmcp.Char.Items.Add.item
+        if gmcp.Char.Items.Add.location == "room" then
+            Sentry.sortItem(item)
+        end
+    elseif event == "gmcp.Char.Items.Remove" then
+        local item = gmcp.Char.Items.Remove.item
+        if gmcp.Char.Items.Remove.location == "room" then
+            Sentry.denizens[item.id] = nil
+            Sentry.items[item.id] = nil
+            Sentry.furniture[item.id] = nil
+            Sentry.clothing[item.id] = nil 
+            
+            if Sentry.hasEffect("sigil_" .. item.id) then Sentry.removeEffect("sigil_" .. item.id, true) end
+            if Sentry.hasEffect("totem_" .. item.id) then Sentry.removeEffect("totem_" .. item.id, true) end
+        end
+    end
+    
+    Sentry.updateRoomUI()
+    
+    if #Sentry.probeQueue > 0 then
+        local probesToRun = Sentry.probeQueue
+        local capturedRoom = Sentry.lastRoom
+        Sentry.probeQueue = {} 
+        
+        if Sentry.probeTimer then killTimer(Sentry.probeTimer) end
+        
+        Sentry.probeTimer = tempTimer(0.25, function()
+            if Sentry.lastRoom ~= capturedRoom then return end
+            
+            Sentry.silentProbing = true
+            for _, id in ipairs(probesToRun) do
+                send("probe " .. id, false)
+            end
+            
+            if Sentry.gagTimer then killTimer(Sentry.gagTimer) end
+            Sentry.gagTimer = tempTimer(2.0, function() Sentry.silentProbing = false end)
+        end)
+    end
+end
+
+-- =========================================================================
+-- 6. DYNAMIC TRIGGERS
+-- =========================================================================
+Sentry.triggers = Sentry.triggers or {}
+
+function Sentry.createTriggers()
+    for _, id in ipairs(Sentry.triggers) do killTrigger(id) end
+    Sentry.triggers = {}
+
+    -- SHIP BOARDING & DISEMBARKING
+    table.insert(Sentry.triggers, tempRegexTrigger("^You stride up the lowered boarding plank\\.$", 
+        [[
+            Sentry.isOnShip = true
+            Sentry.toggle("ship", true)
+            Sentry.silentShipInfo = true
+            send("ship info", false)
+        ]]
+    ))
+    
+    table.insert(Sentry.triggers, tempRegexTrigger("^You disembark the ship via the lowered gangplank\\.$", 
+        [[
+            Sentry.isOnShip = false
+            Sentry.toggle("ship", false)
+        ]]
+    ))
+
+    -- SHIP MOVEMENT
+    table.insert(Sentry.triggers, tempRegexTrigger("^The ship (?:moves to|drifts toward) the (\\w+)\\.$", 
+        [[
+            if Sentry.isOnShip then
+                Sentry.silentShipInfo = true
+                send("ship info", false)
+            end
+        ]]
+    ))
+
+    -- SHIP INFO PARSER BLOCK
+    table.insert(Sentry.triggers, tempRegexTrigger("^Ship Info for:\\s+(.*)$", 
+        [[
+            Sentry.parsingShipInfo = true
+            Sentry.shipData = { name = matches[2] }
+            if Sentry.silentShipInfo then deleteLine() end
+            
+            tempPromptTrigger(function()
+                if Sentry.parsingShipInfo then
+                    Sentry.parsingShipInfo = false
+                    Sentry.silentShipInfo = false
+                    Sentry.updateShipUI()
+                end
+            end, 1)
+        ]]
+    ))
+
+    -- Dynamic matcher: Catches ANY line structured as "Key: Value" or "Key? Value"
+    table.insert(Sentry.triggers, tempRegexTrigger("^([^:?]+)(:|\\?)\\s+(.*)$", 
+        [[
+            if Sentry.parsingShipInfo then
+                if Sentry.silentShipInfo then deleteLine() end
+                
+                local key = matches[2]:lower()
+                if matches[3] == "?" then key = key .. "?" end
+                local val = matches[4]:gsub("%.$", "") 
+                
+                -- Assign ALL keys to our UI data table
+                if key == "ship type" then Sentry.shipData.type = val
+                elseif key == "ship flag" then Sentry.shipData.flag = val
+                elseif key == "ship vis" then Sentry.shipData.vis = val
+                elseif key == "owned by" then Sentry.shipData.owner = val
+                elseif key == "captained by" then Sentry.shipData.captain = val
+                elseif key == "seaworthiness" then Sentry.shipData.seaworthy = val
+                elseif key == "sails health" then Sentry.shipData.sails = val:match("(%d+)%%")
+                elseif key == "hull health" then Sentry.shipData.hull = val:match("(%d+)%%")
+                elseif key == "leaking now?" then Sentry.shipData.leaking = val
+                elseif key == "fires" then Sentry.shipData.fires = val
+                elseif key == "riggings" then Sentry.shipData.riggings = val
+                elseif key == "course" then Sentry.shipData.course = val
+                elseif key == "sailing?" then Sentry.shipData.sailing = val
+                elseif key == "rowing?" then Sentry.shipData.rowing = val
+                elseif key == "in harbour?" then Sentry.shipData.harbour = val
+                elseif key == "in ship arena?" then Sentry.shipData.arena = val
+                elseif key == "locale" then Sentry.shipData.locale = val
+                elseif key == "anchored?" then Sentry.shipData.anchored = val
+                elseif key == "gangplank" then Sentry.shipData.plank = val
+                elseif key == "rope ladders" then Sentry.shipData.ladders = val
+                elseif key == "crewmates" then Sentry.shipData.crew = val
+                elseif key == "manoeuvres" then Sentry.shipData.manoeuvres = val
+                elseif key == "diving bell" then Sentry.shipData.bell = val
+                elseif key == "buoy" then Sentry.shipData.buoy = val
+                elseif key == "cargo float" then Sentry.shipData.float = val
+                elseif key == "warn of low wages in strongbox" then Sentry.shipData.wages = val
+                elseif key == "notify of changes in captaincy" then Sentry.shipData.notify = val
+                elseif key == "wind from the" then Sentry.shipData.wind = val
+                end
+            end
+        ]]
+    ))
+
+    -- Catch and gag the dividing dashes
+    table.insert(Sentry.triggers, tempRegexTrigger("^\\-+$", 
+        [[ if Sentry.parsingShipInfo and Sentry.silentShipInfo then deleteLine() end ]]
+    ))
+    
+    -- Catch and gag the empty blank lines Achaea uses for spacing
+    table.insert(Sentry.triggers, tempRegexTrigger("^\\s*$", 
+        [[ if Sentry.parsingShipInfo and Sentry.silentShipInfo then deleteLine() end ]]
+    ))
+
+    -- Loyals Parser 
+    table.insert(Sentry.triggers, tempRegexTrigger("^Your loyal companions are:", 
+        [[ 
+            Sentry.parsingLoyals = true 
+            tempPromptTrigger([=[
+                if Sentry.parsingLoyals then
+                    Sentry.parsingLoyals = false
+                    Sentry.updateRoomUI()
+                    cecho("\n<SteelBlue>[Sentry]:<reset> <white>Loyal IDs successfully tracked!<reset>\n")
+                end
+            ]=], 1)
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^You have no loyal companions\\.", 
+        [[ 
+            Sentry.config.myLoyals = {} 
+            Sentry.updateRoomUI()
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^(.*?)(\\d+) is ", 
+        [[
+            if Sentry.parsingLoyals then
+                local id = matches[3]
+                Sentry.config.myLoyals[tostring(id)] = true
+            end
+        ]]
+    ))
+
+    -- Smart Runelist Parser 
+    table.insert(Sentry.triggers, tempRegexTrigger("Type.+Owner", 
+        [[ 
+            Sentry.parsingRunes = true
+            Sentry.dashCount = 0
+            for id in pairs(Sentry.effects) do
+                if id:find("^rune_") then Sentry.effects[id] = nil end
+            end
+            if type(Sentry.silentRunelist) == "number" and Sentry.silentRunelist > 0 then deleteLine() end 
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("-{20,}", 
+        [[
+            if Sentry.parsingRunes then
+                Sentry.dashCount = Sentry.dashCount + 1
+                if type(Sentry.silentRunelist) == "number" and Sentry.silentRunelist > 0 then deleteLine() end
+                if Sentry.dashCount == 2 then
+                    Sentry.parsingRunes = false
+                    if type(Sentry.silentRunelist) == "number" and Sentry.silentRunelist > 0 then Sentry.silentRunelist = Sentry.silentRunelist - 1 end
+                end
+            end
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^A rune (?:resembling|like|shaped like) a[n]? (.+?)\\s{2,}(\\w+)", 
+        [[
+            if Sentry.parsingRunes then
+                if type(Sentry.silentRunelist) == "number" and Sentry.silentRunelist > 0 then deleteLine() end
+                local object = matches[2]:lower()
+                local owner = matches[3]
+                local runeInfo = Sentry.runeData[object]
+                local displayName = runeInfo and (runeInfo.name .. " (" .. runeInfo.effect .. ") - " .. owner) or (object:title() .. " - " .. owner)
+                local cleanID = object:gsub("%s+", "_")
+                Sentry.addEffect("rune_" .. cleanID .. "_" .. owner, displayName, "gold")
+            end
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("You find no runes", 
+        [[ 
+            for id in pairs(Sentry.effects) do
+                if id:find("^rune_") then Sentry.effects[id] = nil end
+            end
+            Sentry.updateRoomUI()
+            if type(Sentry.silentRunelist) == "number" and Sentry.silentRunelist > 0 then 
+                deleteLine(); Sentry.silentRunelist = Sentry.silentRunelist - 1 
+            end 
+        ]]
+    ))
+
+    -- Sketching & Smudging 
+    table.insert(Sentry.triggers, tempRegexTrigger("^You begin sketching an? \\w+ rune on the ground\\.$", [[]]))
+    table.insert(Sentry.triggers, tempRegexTrigger("^With a flourish, you finish sketching an? \\w+ rune\\.$", [[ Sentry.silentRunelist = Sentry.silentRunelist + 1; send("runelist", false) ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^You smudge the \\w+ rune off the ground\\.$", [[ Sentry.silentRunelist = Sentry.silentRunelist + 1; send("runelist", false) ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^(\\w+) sketches a rune.*$", [[ Sentry.silentRunelist = Sentry.silentRunelist + 1; send("runelist", false) ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^(\\w+) smudges a rune.*$", [[ Sentry.silentRunelist = Sentry.silentRunelist + 1; send("runelist", false) ]] ))
+
+    -- Wall Spawn & Probe Parser
+    table.insert(Sentry.triggers, tempRegexTrigger("^A wall of .* rises from the earth to block the exit to the (\\w+)\\.$", 
+        [[
+            local dir = matches[2]
+            for id, item in pairs(Sentry.items) do
+                if item.name:lower():find("wall of") and not item.direction then
+                    Sentry.items[id].direction = dir; Sentry.updateRoomUI(); break
+                end
+            end
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^A (?:large )?wall of .* stands here, blocking passage to the (\\w+)\\.$", 
+        [[
+            local dir = matches[2]
+            for id, item in pairs(Sentry.items) do
+                if item.name:lower():find("wall of") and not item.direction then
+                    Sentry.items[id].direction = dir; Sentry.updateRoomUI(); break
+                end
+            end
+            if Sentry.silentProbing then deleteLine() end
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^A (?:large )?wall of .* is blocking passage to the (\\w+)\\.$", 
+        [[
+            local dir = matches[2]
+            for id, item in pairs(Sentry.items) do
+                if item.name:lower():find("wall of") and not item.direction then
+                    Sentry.items[id].direction = dir; Sentry.updateRoomUI(); break
+                end
+            end
+            if Sentry.silentProbing then deleteLine() end
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^This .* looks to be made of .*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^This .* wall is made of .*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^It towers above you.*$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^It weighs about .* pounds\\.$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+
+    -- Totem Probe Parser 
+    table.insert(Sentry.triggers, tempRegexTrigger("^It has the following runes sketched upon it:$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("is sketched in(?:to)? slot", 
+        [[
+            if Sentry.silentProbing then deleteLine() end
+            local lineLower = line:lower()
+            local runeName = nil
+            for key, data in pairs(Sentry.runeData) do
+                local searchKey = key
+                if key == "stickman" then searchKey = "stick man" end
+                if key == "upwards-pointing arrow" then searchKey = "upward-pointing arrow" end
+                if lineLower:find(searchKey) then runeName = data.name; break end
+            end
+            if runeName then
+                for id, effect in pairs(Sentry.effects) do
+                    if id:find("^totem_") then
+                        effect.item.runes = effect.item.runes or {}
+                        effect.item.runes[runeName] = (effect.item.runes[runeName] or 0) + 1
+                        Sentry.updateRoomUI()
+                        break 
+                    end
+                end
+            end
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^It is tuned against.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^It bears the distinctive mark of.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^You may use this item to parry with\\.", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^This totem is the property of.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^The totem is currently empowered.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^It has \\d+ months of usefulness left\\.", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    
+    -- Sigil Probe Parser & Traps
+    table.insert(Sentry.triggers, tempRegexTrigger("^There is a flame-shaped sigil attached\\.", 
+        [[
+            if Sentry.silentProbing then deleteLine() end
+            for id, effect in pairs(Sentry.effects) do
+                if id:find("^sigil_") and not effect.flamed then
+                    Sentry.effects[id].flamed = true; Sentry.updateRoomUI(); break
+                end
+            end
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^You quickly pull your hand back as a flame sigil on an? (.*?) singes your fingers\\.$", 
+        [[
+            local targetName = matches[2]:lower()
+            for id, effect in pairs(Sentry.effects) do
+                if id:find("^sigil_") and effect.item.name:lower():find(targetName) then
+                    Sentry.effects[id].flamed = true; Sentry.updateRoomUI(); break
+                end
+            end
+        ]]
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^Made (?:of|from) .*, .* sigil.*", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^It weighs \\d+ ounce\\(s\\)\\.$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
+
+    -- Environmental Effects
+    table.insert(Sentry.triggers, tempRegexTrigger("^The air is filled with a humming vibration\\.$", [[ Sentry.addEffect("vibrations", "Humming Vibrations", "magenta") ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^The humming vibration in the air fades away\\.$", [[ Sentry.removeEffect("vibrations") ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^A roaring wall of fire erupts.*$", [[ Sentry.addEffect("fire", "Roaring Fire", "orange_red") ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^The wall of fire burns out and disappears\\.$", [[ Sentry.removeEffect("fire") ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^The area is flooded with water\\.$", [[ Sentry.addEffect("flood", "Flooded", "blue") ]] ))
+    table.insert(Sentry.triggers, tempRegexTrigger("^The floodwaters recede\\.$", [[ Sentry.removeEffect("flood") ]] ))
+end
+
 -- =========================================================================
 -- 7. COMMAND INTERFACE & ALIASES
 -- =========================================================================
-function Sentry.toggle(uiName)
+function Sentry.toggle(uiName, forceState)
+    -- Helper to apply force state if provided, otherwise toggle boolean
+    local function applyState(currentState, force)
+        if force ~= nil then return force else return not currentState end
+    end
+
     if uiName == "main" then
-        Sentry.config.mainVisible = not Sentry.config.mainVisible
+        Sentry.config.mainVisible = applyState(Sentry.config.mainVisible, forceState)
         if Sentry.config.mainVisible then Sentry.container:show(); cecho("\n<SteelBlue>[Sentry]:<reset> <white>Main UI <gold>VISIBLE<white>.<reset>\n")
         else Sentry.container:hide(); cecho("\n<SteelBlue>[Sentry]:<reset> <white>Main UI <gold>HIDDEN<white>.<reset>\n") end
     
     elseif uiName == "self" then
-        Sentry.config.selfVisible = not Sentry.config.selfVisible
+        Sentry.config.selfVisible = applyState(Sentry.config.selfVisible, forceState)
         if Sentry.config.selfVisible then Sentry.selfContainer:show(); cecho("\n<SteelBlue>[Sentry]:<reset> <white>Self UI <gold>VISIBLE<white>.<reset>\n")
         else Sentry.selfContainer:hide(); cecho("\n<SteelBlue>[Sentry]:<reset> <white>Self UI <gold>HIDDEN<white>.<reset>\n") end
     
     elseif uiName == "target" then
-        Sentry.config.targetVisible = not Sentry.config.targetVisible
-        if Sentry.config.targetVisible then Sentry.targetContainer:show(); cecho("\n<SteelBlue>[Sentry]:<reset> <white>Target UI <gold>VISIBLE<white>.<reset>\n")
-        else Sentry.targetContainer:hide(); cecho("\n<SteelBlue>[Sentry]:<reset> <white>Target UI <gold>HIDDEN<white>.<reset>\n") end
+        Sentry.config.targetVisible = applyState(Sentry.config.targetVisible, forceState)
+        if Sentry.config.targetVisible then 
+            Sentry.targetContainer:show()
+            Sentry.shipContainer:hide() -- Ensure they don't overlap
+            cecho("\n<SteelBlue>[Sentry]:<reset> <white>Target UI <gold>VISIBLE<white>.<reset>\n")
+        else 
+            Sentry.targetContainer:hide(); cecho("\n<SteelBlue>[Sentry]:<reset> <white>Target UI <gold>HIDDEN<white>.<reset>\n") 
+        end
+
+    elseif uiName == "ship" then
+        Sentry.config.shipVisible = applyState(Sentry.config.shipVisible, forceState)
+        if Sentry.config.shipVisible then 
+            Sentry.shipContainer:show()
+            Sentry.targetContainer:hide() -- Hide target UI automatically when boarding
+            cecho("\n<SteelBlue>[Sentry]:<reset> <white>Ship UI <gold>VISIBLE<white>.<reset>\n")
+        else 
+            Sentry.shipContainer:hide()
+            Sentry.targetContainer:show() -- Bring target back when disembarking
+            cecho("\n<SteelBlue>[Sentry]:<reset> <white>Ship UI <gold>HIDDEN<white>.<reset>\n") 
+        end
     end
 end
 
@@ -530,6 +1213,7 @@ function Sentry.showHelp()
     cecho("\n  <gold>sentry toggle main<reset>   - Toggles Room Awareness UI.")
     cecho("\n  <gold>sentry toggle self<reset>   - Toggles Self Status UI.")
     cecho("\n  <gold>sentry toggle target<reset> - Toggles Target Status UI.")
+    cecho("\n  <gold>sentry toggle ship<reset>   - Toggles Ship Info UI manually.")
     cecho("\n<SteelBlue>=======================================================================<reset>\n")
 end
 
@@ -559,6 +1243,7 @@ Sentry.aliasHandler = tempAlias("^sentry(?: (.*))?$", [[
 if Sentry.config.mainVisible then Sentry.container:show() else Sentry.container:hide() end
 if Sentry.config.selfVisible then Sentry.selfContainer:show() else Sentry.selfContainer:hide() end
 if Sentry.config.targetVisible then Sentry.targetContainer:show() else Sentry.targetContainer:hide() end
+if Sentry.config.shipVisible then Sentry.shipContainer:show() else Sentry.shipContainer:hide() end
 
 -- =========================================================================
 -- 8. EVENT REGISTRATION
@@ -586,12 +1271,12 @@ table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Defences", 
 
 -- Target Status / Master Command Events
 table.insert(Sentry.events, registerAnonymousEventHandler("sysDataSendRequest", function(event, command)
-    Sentry.handleCommand(event, command) -- From core
-    Sentry.updateTargetUI()              -- From legacy target UI
+    Sentry.handleCommand(event, command)
+    Sentry.updateTargetUI()
 end))
 
--- Triggers initialization left identical to Sentry core
 Sentry.createTriggers()
 Sentry.updateRoomUI()
 Sentry.updateSelfUI()
 Sentry.updateTargetUI()
+Sentry.updateShipUI()
