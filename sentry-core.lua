@@ -37,6 +37,10 @@ Sentry.config.selfVisible = true
 Sentry.config.targetVisible = false
 Sentry.config.shipVisible = false
 
+-- Anti-Spam / Collapsing Toggles
+Sentry.config.collapseThreshold = 20  -- Auto-collapse if the room has >25 total things
+Sentry.config.alwaysCollapse = false  -- If true, it will ALWAYS stack multiples
+
 Sentry.config.useNDBColors = true
 Sentry.config.colorMounts = false
 Sentry.config.myLoyals = Sentry.config.myLoyals or {}
@@ -109,7 +113,7 @@ Sentry.sigilData = {
 Sentry.container = Sentry.container or Geyser.Container:new({
     name = "SentryContainer",
     x = "5px", y = "66%",
-    width = "300px", height = "33%",
+    width = "350px", height = "33%",
 })
 
 Sentry.console = Sentry.console or Geyser.MiniConsole:new({
@@ -122,7 +126,7 @@ Sentry.console = Sentry.console or Geyser.MiniConsole:new({
 Sentry.selfContainer = Sentry.selfContainer or Geyser.Container:new({
     name = "SentrySelfContainer",
     x = "5px", y = "33%",
-    width = "300px", height = "33%",
+    width = "350px", height = "33%",
 })
 
 Sentry.selfConsole = Sentry.selfConsole or Geyser.MiniConsole:new({
@@ -135,7 +139,7 @@ Sentry.selfConsole = Sentry.selfConsole or Geyser.MiniConsole:new({
 Sentry.targetContainer = Sentry.targetContainer or Geyser.Container:new({
     name = "SentryTargetContainer",
     x = "5px", y = "2px",
-    width = "300px", height = "33%",
+    width = "350px", height = "33%",
 })
 
 Sentry.targetConsole = Sentry.targetConsole or Geyser.MiniConsole:new({
@@ -149,7 +153,7 @@ Sentry.targetConsole = Sentry.targetConsole or Geyser.MiniConsole:new({
 Sentry.shipContainer = Sentry.shipContainer or Geyser.Container:new({
     name = "SentryShipContainer",
     x = "5px", y = "2px",
-    width = "300px", height = "33%",
+    width = "350px", height = "33%",
 })
 
 Sentry.shipConsole = Sentry.shipConsole or Geyser.MiniConsole:new({
@@ -275,6 +279,12 @@ function Sentry.getColor(category, name, id, defaultColor)
     return defaultColor
 end
 
+-- Strips quotes to prevent Achaean apostrophes (like tsol'aa) from breaking Mudlet's HTML tooltips
+function Sentry.stripQuotes(str)
+    if not str then return "" end
+    return str:gsub("'", ""):gsub('"', "")
+end
+
 -- =========================================================================
 -- 4. UI UPDATERS
 -- =========================================================================
@@ -287,6 +297,15 @@ function Sentry.updateRoomUI()
         for _ in pairs(t) do return true end
         return false
     end
+    
+    -- Count everything to determine if we need to auto-collapse
+    local totalEntities = 0
+    local function countTable(t) for _ in pairs(t) do totalEntities = totalEntities + 1 end end
+    countTable(Sentry.players) countTable(Sentry.denizens) countTable(Sentry.items)
+    countTable(Sentry.clothing) countTable(Sentry.furniture) countTable(Sentry.effects)
+
+    local shouldCollapse = Sentry.config.alwaysCollapse or (totalEntities >= Sentry.config.collapseThreshold)
+
     local isFirstSection = true
 
     if gmcp and gmcp.Room and gmcp.Room.Info and gmcp.Room.Info.name then
@@ -300,18 +319,32 @@ function Sentry.updateRoomUI()
     if tableHasContents(Sentry.players) then
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<cyan>=== PLAYERS ===<reset>\n")
+        
+        local renderList, grouped = {}, {}
         for name, p in pairs(Sentry.players) do
+            local key = shouldCollapse and name or tostring(name .. "_" .. math.random())
+            if not grouped[key] then
+                grouped[key] = { count = 1, name = name, item = p }
+                table.insert(renderList, grouped[key])
+            else grouped[key].count = grouped[key].count + 1 end
+        end
+        table.sort(renderList, function(a, b) return a.name < b.name end)
+
+        for _, data in ipairs(renderList) do
+            local name = data.name
+            local countText = data.count > 1 and (" <white>(" .. data.count .. ")") or ""
             local tCmd = Sentry.config.targetCmd .. name
             local pCmd = Sentry.config.probeCmd .. name
             local pColor = Sentry.getColor("player", name, nil, "<cyan>")
+            local safeName = Sentry.stripQuotes(name)
             
             Sentry.console:cecho("<white>[")
-            Sentry.console:cechoLink("<red>T", [[send("]]..tCmd..[[", false)]], "Target " .. name, true)
+            Sentry.console:cechoLink("<red>T", [[send("]]..tCmd..[[", false)]], "Target " .. safeName, true)
             if not Sentry.isGlanced then
                 Sentry.console:cecho("<white>|")
-                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. name, true)
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. safeName, true)
             end
-            Sentry.console:cecho("<white>] " .. pColor .. name .. "<reset>\n")
+            Sentry.console:cecho("<white>] " .. pColor .. name .. countText .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -320,32 +353,43 @@ function Sentry.updateRoomUI()
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<yellow>=== DENIZENS ===<reset>\n")
         
-        local sortedDenizens = {}
-        for id, d in pairs(Sentry.denizens) do table.insert(sortedDenizens, d) end
-        table.sort(sortedDenizens, function(a, b)
-            local aLoyal = Sentry.config.myLoyals[tostring(a.id)] == true
-            local bLoyal = Sentry.config.myLoyals[tostring(b.id)] == true
-            if aLoyal and not bLoyal then return true end
-            if bLoyal and not aLoyal then return false end
-            return a.name < b.name
+        local renderList, grouped = {}, {}
+        for id, d in pairs(Sentry.denizens) do
+            local isLoyal = Sentry.config.myLoyals[tostring(id)]
+            local loyalStr = isLoyal and "1" or "0"
+            local key = shouldCollapse and (d.name .. "_" .. loyalStr) or tostring(id)
+
+            if not grouped[key] then
+                grouped[key] = { count = 1, id = id, item = d, isLoyal = isLoyal }
+                table.insert(renderList, grouped[key])
+            else grouped[key].count = grouped[key].count + 1 end
+        end
+        
+        table.sort(renderList, function(a, b)
+            if a.isLoyal and not b.isLoyal then return true end
+            if b.isLoyal and not a.isLoyal then return false end
+            return a.item.name < b.item.name
         end)
 
-        for _, d in ipairs(sortedDenizens) do
-            local readableTarget = Sentry.formatTarget(d.name, d.id)
+        for _, data in ipairs(renderList) do
+            local d = data.item
+            local countText = data.count > 1 and (" <white>(" .. data.count .. ")") or ""
+            local readableTarget = Sentry.formatTarget(d.name, data.id)
             local tCmd = Sentry.config.targetCmd .. readableTarget
             local pCmd = Sentry.config.probeCmd .. readableTarget
-            local dColor = Sentry.getColor("denizen", d.name, d.id, "<yellow>")
+            local dColor = Sentry.getColor("denizen", d.name, data.id, "<yellow>")
+            local safeName = Sentry.stripQuotes(d.name)
             
             local suffix = ""
-            if Sentry.config.myLoyals[tostring(d.id)] then suffix = " <white>(Loyal)" end
+            if data.isLoyal then suffix = " <white>(Loyal)" end
             
             Sentry.console:cecho("<white>[")
-            Sentry.console:cechoLink("<red>T", [[send("]]..tCmd..[[", false)]], "Target " .. d.name, true)
+            Sentry.console:cechoLink("<red>T", [[send("]]..tCmd..[[", false)]], "Target " .. safeName, true)
             if not Sentry.isGlanced then
                 Sentry.console:cecho("<white>|")
-                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. d.name, true)
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. safeName, true)
             end
-            Sentry.console:cecho("<white>] " .. dColor .. d.name .. suffix .. "<reset>\n")
+            Sentry.console:cecho("<white>] " .. dColor .. d.name .. countText .. suffix .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -354,29 +398,39 @@ function Sentry.updateRoomUI()
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<green>=== ITEMS ===<reset>\n")
         
-        local sortedItems = {}
-        for id, i in pairs(Sentry.items) do table.insert(sortedItems, i) end
-        table.sort(sortedItems, function(a, b) return a.name < b.name end)
+        local renderList, grouped = {}, {}
+        for id, i in pairs(Sentry.items) do
+            local dirStr = i.direction or "none"
+            local key = shouldCollapse and (i.name .. "_" .. dirStr) or tostring(id)
+            if not grouped[key] then
+                grouped[key] = { count = 1, id = id, item = i }
+                table.insert(renderList, grouped[key])
+            else grouped[key].count = grouped[key].count + 1 end
+        end
+        table.sort(renderList, function(a, b) return a.item.name < b.item.name end)
 
-        for _, i in ipairs(sortedItems) do
-            local readableTarget = Sentry.formatTarget(i.name, i.id)
+        for _, data in ipairs(renderList) do
+            local i = data.item
+            local countText = data.count > 1 and (" <white>(" .. data.count .. ")") or ""
+            local readableTarget = Sentry.formatTarget(i.name, data.id)
             local gCmd = Sentry.config.getCmd .. readableTarget
             local pCmd = Sentry.config.probeCmd .. readableTarget
-            local iColor = Sentry.getColor("item", i.name, i.id, "<green>")
+            local iColor = Sentry.getColor("item", i.name, data.id, "<green>")
+            local safeName = Sentry.stripQuotes(i.name)
             
             local suffix = ""
             if i.direction then suffix = " <white>(" .. i.direction:upper() .. ")" end
             
             if not Sentry.isGlanced then
                 Sentry.console:cecho("<white>[")
-                Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. i.name, true)
+                Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. safeName, true)
                 Sentry.console:cecho("<white>|")
-                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. i.name, true)
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. safeName, true)
                 Sentry.console:cecho("<white>] ")
             else
                 Sentry.console:cecho("<white>[<grey>-<white>] ")
             end
-            Sentry.console:cecho(iColor .. i.name .. suffix .. "<reset>\n")
+            Sentry.console:cecho(iColor .. i.name .. countText .. suffix .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -385,25 +439,34 @@ function Sentry.updateRoomUI()
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<plum>=== CLOTHING ===<reset>\n")
         
-        local sortedClothing = {}
-        for id, c in pairs(Sentry.clothing) do table.insert(sortedClothing, c) end
-        table.sort(sortedClothing, function(a, b) return a.name < b.name end)
+        local renderList, grouped = {}, {}
+        for id, c in pairs(Sentry.clothing) do
+            local key = shouldCollapse and c.name or tostring(id)
+            if not grouped[key] then
+                grouped[key] = { count = 1, id = id, item = c }
+                table.insert(renderList, grouped[key])
+            else grouped[key].count = grouped[key].count + 1 end
+        end
+        table.sort(renderList, function(a, b) return a.item.name < b.item.name end)
 
-        for _, c in ipairs(sortedClothing) do
-            local readableTarget = Sentry.formatTarget(c.name, c.id)
+        for _, data in ipairs(renderList) do
+            local c = data.item
+            local countText = data.count > 1 and (" <white>(" .. data.count .. ")") or ""
+            local readableTarget = Sentry.formatTarget(c.name, data.id)
             local gCmd = Sentry.config.getCmd .. readableTarget
             local pCmd = Sentry.config.probeCmd .. readableTarget
+            local safeName = Sentry.stripQuotes(c.name)
             
             if not Sentry.isGlanced then
                 Sentry.console:cecho("<white>[")
-                Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. c.name, true)
+                Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. safeName, true)
                 Sentry.console:cecho("<white>|")
-                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. c.name, true)
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. safeName, true)
                 Sentry.console:cecho("<white>] ")
             else
                 Sentry.console:cecho("<white>[<grey>-<white>] ")
             end
-            Sentry.console:cecho("<plum>" .. c.name .. "<reset>\n")
+            Sentry.console:cecho("<plum>" .. c.name .. countText .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -412,22 +475,31 @@ function Sentry.updateRoomUI()
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<grey>=== FURNITURE ===<reset>\n")
         
-        local sortedFurn = {}
-        for id, f in pairs(Sentry.furniture) do table.insert(sortedFurn, f) end
-        table.sort(sortedFurn, function(a, b) return a.name < b.name end)
+        local renderList, grouped = {}, {}
+        for id, f in pairs(Sentry.furniture) do
+            local key = shouldCollapse and f.name or tostring(id)
+            if not grouped[key] then
+                grouped[key] = { count = 1, id = id, item = f }
+                table.insert(renderList, grouped[key])
+            else grouped[key].count = grouped[key].count + 1 end
+        end
+        table.sort(renderList, function(a, b) return a.item.name < b.item.name end)
 
-        for _, f in ipairs(sortedFurn) do
-            local readableTarget = Sentry.formatTarget(f.name, f.id)
+        for _, data in ipairs(renderList) do
+            local f = data.item
+            local countText = data.count > 1 and (" <white>(" .. data.count .. ")") or ""
+            local readableTarget = Sentry.formatTarget(f.name, data.id)
             local pCmd = Sentry.config.probeCmd .. readableTarget
+            local safeName = Sentry.stripQuotes(f.name)
             
             if not Sentry.isGlanced then
                 Sentry.console:cecho("<white>[")
-                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. f.name, true)
+                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. safeName, true)
                 Sentry.console:cecho("<white>] ")
             else
                 Sentry.console:cecho("<white>[<grey>-<white>] ")
             end
-            Sentry.console:cecho("<LightSlateGrey>" .. f.name .. "<reset>\n")
+            Sentry.console:cecho("<LightSlateGrey>" .. f.name .. countText .. "<reset>\n")
         end
         isFirstSection = false
     end
@@ -436,12 +508,29 @@ function Sentry.updateRoomUI()
         if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<magenta>=== EFFECTS ===<reset>\n")
         
-        local sortedEffects = {}
-        for id, data in pairs(Sentry.effects) do table.insert(sortedEffects, {id = id, data = data}) end
-        table.sort(sortedEffects, function(a, b) return a.data.name < b.data.name end)
+        local renderList, grouped = {}, {}
+        for id, data in pairs(Sentry.effects) do
+            local runeStr = ""
+            if data.item and data.item.runes then
+                local rs = {}
+                for r, c in pairs(data.item.runes) do table.insert(rs, c..r) end
+                table.sort(rs)
+                runeStr = table.concat(rs, ",")
+            end
+            
+            local flmStr = data.flamed and "1" or "0"
+            local key = shouldCollapse and (data.name .. "_" .. flmStr .. "_" .. runeStr) or tostring(id)
+            
+            if not grouped[key] then
+                grouped[key] = { count = 1, id = id, data = data }
+                table.insert(renderList, grouped[key])
+            else grouped[key].count = grouped[key].count + 1 end
+        end
+        table.sort(renderList, function(a, b) return a.data.name < b.data.name end)
 
-        for _, effect in ipairs(sortedEffects) do
-            local data = effect.data
+        for _, effData in ipairs(renderList) do
+            local data = effData.data
+            local countText = effData.count > 1 and (" <white>(" .. effData.count .. ")") or ""
             local suffix = ""
             
             if data.item and data.item.runes then
@@ -458,16 +547,18 @@ function Sentry.updateRoomUI()
             
             if data.item and not Sentry.isGlanced then
                 local readableTarget = Sentry.formatTarget(data.item.name, data.item.id)
+                local safeName = Sentry.stripQuotes(data.item.name)
+                
                 if data.flamed then
-                    Sentry.console:cecho("<white>[<red>X<white>] <" .. data.color .. ">" .. data.name .. suffix .. " <red>(Flamed)<reset>\n")
+                    Sentry.console:cecho("<white>[<red>X<white>] <" .. data.color .. ">" .. data.name .. countText .. suffix .. " <red>(Flamed)<reset>\n")
                 else
                     local gCmd = Sentry.config.getCmd .. readableTarget
                     Sentry.console:cecho("<white>[")
-                    Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. data.item.name, true)
-                    Sentry.console:cecho("<white>] <" .. data.color .. ">" .. data.name .. suffix .. "<reset>\n")
+                    Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. safeName, true)
+                    Sentry.console:cecho("<white>] <" .. data.color .. ">" .. data.name .. countText .. suffix .. "<reset>\n")
                 end
             else
-                Sentry.console:cecho("<white>[<" .. data.color .. ">~<white>] <" .. data.color .. ">" .. data.name .. suffix .. "<reset>\n")
+                Sentry.console:cecho("<white>[<" .. data.color .. ">~<white>] <" .. data.color .. ">" .. data.name .. countText .. suffix .. "<reset>\n")
             end
         end
     end
@@ -773,7 +864,24 @@ end
 function Sentry.handleRoomChange(event)
     if event == "gmcp.Room.Info" then
         local currentRoom = gmcp.Room.Info.num
+        local env = gmcp.Room.Info.environment or ""
         
+        -- Rock-solid ship detection via GMCP
+        local isVessel = (env == "Vessel")
+        
+        -- If we enter a ship (or log in on one)
+        if isVessel and not Sentry.isOnShip then
+            Sentry.isOnShip = true
+            Sentry.toggle("ship", true)
+            Sentry.silentShipInfo = true
+            send("ship info", false)
+            
+        -- If we leave a ship
+        elseif not isVessel and Sentry.isOnShip then
+            Sentry.isOnShip = false
+            Sentry.toggle("ship", false)
+        end
+
         if Sentry.lastRoom ~= currentRoom then
             Sentry.lastRoom = currentRoom
             Sentry.effects = {}
@@ -864,23 +972,6 @@ Sentry.triggers = Sentry.triggers or {}
 function Sentry.createTriggers()
     for _, id in ipairs(Sentry.triggers) do killTrigger(id) end
     Sentry.triggers = {}
-
-    -- SHIP BOARDING & DISEMBARKING
-    table.insert(Sentry.triggers, tempRegexTrigger("^You stride up the lowered boarding plank\\.$", 
-        [[
-            Sentry.isOnShip = true
-            Sentry.toggle("ship", true)
-            Sentry.silentShipInfo = true
-            send("ship info", false)
-        ]]
-    ))
-    
-    table.insert(Sentry.triggers, tempRegexTrigger("^You disembark the ship via the lowered gangplank\\.$", 
-        [[
-            Sentry.isOnShip = false
-            Sentry.toggle("ship", false)
-        ]]
-    ))
 
     -- SHIP MOVEMENT
     table.insert(Sentry.triggers, tempRegexTrigger("^The ship (?:moves to|drifts toward) the (\\w+)\\.$", 
@@ -1188,7 +1279,13 @@ function Sentry.toggle(uiName, forceState)
         else 
             Sentry.targetContainer:hide(); cecho("\n<SteelBlue>[Sentry]:<reset> <white>Target UI <gold>HIDDEN<white>.<reset>\n") 
         end
-
+    
+    elseif uiName == "collapse" then
+        Sentry.config.alwaysCollapse = applyState(Sentry.config.alwaysCollapse, forceState)
+        if Sentry.config.alwaysCollapse then cecho("\n<SteelBlue>[Sentry]:<reset> <white>Identical Item Grouping <green>ALWAYS ON<white>.<reset>\n")
+        else cecho("\n<SteelBlue>[Sentry]:<reset> <white>Identical Item Grouping <red>AUTO-ONLY<white>.<reset>\n") end
+        Sentry.updateRoomUI()
+    
     elseif uiName == "ship" then
         Sentry.config.shipVisible = applyState(Sentry.config.shipVisible, forceState)
         if Sentry.config.shipVisible then 
@@ -1214,6 +1311,7 @@ function Sentry.showHelp()
     cecho("\n  <gold>sentry toggle self<reset>   - Toggles Self Status UI.")
     cecho("\n  <gold>sentry toggle target<reset> - Toggles Target Status UI.")
     cecho("\n  <gold>sentry toggle ship<reset>   - Toggles Ship Info UI manually.")
+    cecho("\n  <gold>sentry toggle collapse<reset> - Toggles Identical Item Grouping.")
     cecho("\n<SteelBlue>=======================================================================<reset>\n")
 end
 
