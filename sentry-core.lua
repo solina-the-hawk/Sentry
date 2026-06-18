@@ -7,9 +7,6 @@ Sentry = Sentry or {}
 
 Sentry.players = Sentry.players or {}
 Sentry.denizens = Sentry.denizens or {}
-Sentry.items = Sentry.items or {}
-Sentry.furniture = Sentry.furniture or {}
-Sentry.clothing = Sentry.clothing or {}
 Sentry.effects = Sentry.effects or {} 
 Sentry.config = Sentry.config or {}
 
@@ -59,17 +56,193 @@ Sentry.config.colorMounts = false
 Sentry.config.myLoyals = Sentry.config.myLoyals or {}
 
 Sentry.config.furnitureKeywords = {
-    "bed", "dresser", "table", "statue", "chair", "desk", "rug", "tapestry",
-    "cabinet", "sofa", "bench, stool", "shelf", "couch", "chandelier", "altar",
-    "throne", "coffin", "fireplace",
+    "chair", "bench", "throne", "stool", "rocker", "pew", "swing", "bed", 
+    "hammock", "bunk", "cot", "couch", "ottoman", "seat", "settle", "bunkbed", 
+    "pillow", "footstool", "table", "desk", "sheets", "runner", "rug", "sideboard",
+    "bureau", "buffet", "lectern", "counter", "tapestry", "tub", "sink", "vanity",
+    "arbour", "basin", "rail", "screen", "altar", "cushion", "grate", "sconce",
+    "candelabra"
 }
 
-Sentry.config.clothingKeywords = {
-    "boots", "sandals", "shoes", "blouse", "shirt", "tunic",
-    "trousers", "pants", "skirt", "bra", "panties", "underwear",
-    "cloak", "cape", "robe", "gloves", "gauntlets", "hat", "helmet", "belt",
-    "dress", "vest", "gown", "corset", "socks", "stockings", "jacket", "coat"
+Sentry.config.containersKeywords = {
+    "basket", "bookshelf", "bookcase", "dresser", "chest", "shelf", "pedestal",
+    "cupboard", "wardrobe", "armoire", "pantry", "cabinet", "hutch", "trunk",
+    "stand", "larder", "rack", "hamper",
+    "knapsack", "box", "sack", "satchel", "purse", "handbag", "wallet", "pack"
 }
+
+Sentry.config.utilityFurnitureKeywords = {
+    "range", "stove", "fireplace", "firepit", "trolley", "cask", "keg", "barrel"
+}
+
+Sentry.config.linensKeywords = {
+    "blanket", "quilt", "handkerchief", "towel", "tablecloth", "napkin"
+}
+
+Sentry.config.artobjectKeywords = {
+    "painting", "canvas", "chunk of wood", "piece of slate", "sheet of parchment",
+    "length of silk", "mural", "sculpture", "statue", "statuette", "portrait",
+    "vase"
+}
+-- paintings can be made on wood, slate, parchment, canvas, or silk. Need to confirm Item IDs of these pieces.
+-- statuettes can be made on clay, stone, obsidian, wood, or ice, same re: item IDs
+
+Sentry.config.clothingKeywords = {
+    "hat", "beret", "bandana", "veil", "bonnet", "ribbon", "mask", "turban", 
+    "headband", "headdress", "cap", "ruff", "kerchief", "wimple", "blindfold", 
+    "cravat", "hood", "snood", "wig", "earmuffs", "tie", "vest", "jerkin", 
+    "tunic", "blouse", "bodice", "shirt", "waistcoat", "sweater", "smock",
+    "top", "jumper", "breeches", "trousers", "loincloth", "skirt", "kilt",
+    "sarong", "hose", "pantaloons", "shorts", "boxer", "bra", "garterbelt",
+    "socks", "stockings", "panties", "corset", "chemise", "petticoat", "nightgown",
+    "slip", "undershirt", "camisole", "shift", "briefs", "swimsuit", "thong",
+    "coat", "cloak", "jacket", "shawl", "doublet", "cape", "surcoat", "tabard",
+    "poncho", "mantle", "cardigan", "gambeson", "dress", "stola", "gown", "cassock",
+    "robes", "toga", "vestment", "sari", "robe", "shoes", "boots", "heels",
+    "slippers", "sandals", "clogs", "mocassins", "pinafore", "gloves", "belt",
+    "beard", "sash", "scarf", "tights", "apron", "stole", "mittens", "glove", 
+    "suspenders", "overalls"
+}
+
+Sentry.config.jewelleryKeywords = {
+    "ring", "band", "toering", "bracelet", "anklet", "armband", "cuff",
+    "bangle", "crown", "diadem", "tiara", "circlet", "coronet", "medallion",
+    "pendant", "necklace", "choker", "collar", "amulet", "chain", "locket", "torc",
+    "brooch", "pin", "cameo", "clasp", "hairclip", "hairpin", "haircomb", "glasses",
+    "monocle", "spectacles", "earring", "hoop", "stud", "nipplering",
+    "navelring", "nosering", "tonguering", "lipring"
+}
+
+Sentry.config.foodKeywords = {
+    "plate", "muffin", "bowl", "platter", "drumstick", "cake", "pastry",
+    "pie", "pancake", "loaf", "skewer", "steak", "haunch", "salad", "sandwich",
+    "tart", "wrap", "cupcake", "roll", "scone", "bagel", "cookie", "doughnut",
+    "burger", "bag", "bun", "tin", "pot", "pan", "jar", "cauldron", "slice",
+    "packet", "piece"
+}
+
+-- need to confirm keywords for things like cup, skull, skin, kawhepot
+Sentry.config.drinkKeywords = {
+    "mug", "cup", "glass", "flute", "bottle", "carafe", "snifter",
+    "jar", "beaker", "tumbler", "stein", "chalice", "goblet",
+    "drinking skin", "drinking skull", "flask", "teapot", "kawhepot"
+}
+
+Sentry.config.miscKeywords = {
+    "plush", "game", "hollowed skull"
+}
+
+-- Need to check full list
+Sentry.config.armourKeywords = {
+    "halfplate", "fullplate", "scalemail", "leatherarmour", "clotharmour"
+}
+
+-- Need to check full list
+Sentry.config.weaponKeywords = {
+    "scimitar", "longsword", "dagger", "knife", "warhammer", "bastard sword"
+}
+
+-- Need to check full list
+Sentry.config.shipEquipmentKeywords = {
+    "thrower", "figurehead", "ballista", "flag"
+}
+
+-- Double check this list as we go
+Sentry.config.readableKeywords = {
+    "book", "scroll", "letter", "map", "note", "tome", "manuscript", "papyrus",
+    "codex", "ledger", "diary", "journal", "newspaper", "magazine", "brochure",
+    "pamphlet", "flyer", "poster", "sign", "notice", "billboard"
+}
+
+-- Need to check full list
+Sentry.config.ingredientsKeywords = {
+    "redink", "blueink", "yellowink", "greenink", "purpleink", "goldink", "blackink",
+    "fat", "fish", "meat", "poultry", "flour", "grain", "sugar", "sugarcane", "nuts",
+    "salt", "saltwater", "olives", "seeds", "spices", "cacao", "chocolate", "clay",
+    "flakes", "horn", "lumicmoss", "scales", "tooth", "wyrmtongue", "redchitin",
+    "yellowchitin", "inkbladder", "dust", "fibre", "rope", "cloth", "iron",
+    "steel", "silver", "stone", "rawstone", "wood", "pitch", "shipcloth",
+    "shipwood", "shiplines", "shipiron"
+}
+
+-- healing herbs and minerals
+Sentry.config.herbandmineralKeywords = {
+    "ash", "bayberry", "bellwort", "bloodroot", "cohosh", "echinacea", "elm",
+    "ginger", "ginseng", "goldenseal", "hawthorn", "kelp", "kola", "kuzu", "lobelia",
+    "moss", "myrrh", "pear", "sileris", "skullcap", "slipper", "valerian", "weed",
+    "antimony", "argentum", "arsenic", "aurum", "azurite", "bisemutum", "calamine",
+    "calcite", "cinnabar", "cuprum", "dolomite", "ferrum", "gypsum", "magnesium",
+    "plumbum", "potash", "quartz", "quicksilver", "realgar", "stannum"
+}
+
+-- vials?
+Sentry.config.remedyAndtoxinKeywords = {
+    "vial"
+}
+
+-- =========================================================================
+-- DYNAMIC ITEM CATEGORIES MASTER MAP
+-- Sorted by Hierarchy of Specificity (Base Nouns first, Materials/Adjectives last)
+-- Right now our sorter goes in order, and can get confused if an item such as a chest
+-- contains a descriptive word like 'band'. In the future, we'll look at a noun
+-- extraction method that will solve this.
+-- =========================================================================
+-- 1. Create a custom color map linking descriptive names to Mudlet-safe RGB values
+Sentry.config.customColors = {
+    ["sentry_deepskyblue"]    = {0, 191, 255},
+    ["sentry_chocolate"]      = {210, 105, 30},
+    ["sentry_saddlebrown"]    = {139, 69, 19},
+    ["sentry_firebrick"]      = {178, 34, 34},
+    ["sentry_lightslategrey"] = {119, 136, 153},
+    ["sentry_plum"]           = {221, 160, 221},
+    ["sentry_hotpink"]        = {255, 105, 180},
+    ["sentry_lightskyblue"]   = {135, 206, 250},
+    ["sentry_mediumpurple"]   = {147, 112, 219},
+    ["sentry_lightcyan"]      = {224, 255, 255},
+    ["sentry_limegreen"]      = {50, 205, 50},
+    ["sentry_darkkhaki"]      = {189, 183, 107},
+}
+
+-- 2. Inject custom colors into Mudlet's global color_table so cecho can use them natively
+for name, rgb in pairs(Sentry.config.customColors) do
+    color_table[name] = rgb
+end
+
+-- 3. Apply the registered colors to our Master Map
+Sentry.config.itemCategories = {
+    -- HIGH SPECIFICITY: Large structures, containers, and distinct equipment
+    { id = "shipequipment", title = "SHIP EQUIPMENT", color = "sentry_deepskyblue", keywords = Sentry.config.shipEquipmentKeywords },
+    { id = "containers", title = "CONTAINERS", color = "sentry_chocolate", keywords = Sentry.config.containersKeywords }, -- FIXED KEYWORD POINTER HERE
+    { id = "utilityfurn", title = "UTILITY FURNITURE", color = "sentry_firebrick", keywords = Sentry.config.utilityFurnitureKeywords },
+    { id = "furniture", title = "FURNITURE", color = "sentry_lightslategrey", keywords = Sentry.config.furnitureKeywords },
+    
+    -- MEDIUM SPECIFICITY: Wearables, weapons, and distinct held items
+    { id = "weapons", title = "WEAPONS", color = "red", keywords = Sentry.config.weaponKeywords },
+    { id = "armour", title = "ARMOUR", color = "orange", keywords = Sentry.config.armourKeywords },
+    { id = "clothing", title = "CLOTHING", color = "sentry_plum", keywords = Sentry.config.clothingKeywords },
+    { id = "jewellery", title = "JEWELLERY", color = "gold", keywords = Sentry.config.jewelleryKeywords },
+    
+    -- LOW SPECIFICITY: Consumables, art, and generic items
+    { id = "art", title = "ART OBJECTS", color = "sentry_hotpink", keywords = Sentry.config.artobjectKeywords },
+    { id = "readables", title = "READABLES", color = "sentry_lightskyblue", keywords = Sentry.config.readableKeywords },
+    { id = "remedies", title = "REMEDIES & TOXINS", color = "sentry_mediumpurple", keywords = Sentry.config.remedyAndtoxinKeywords },
+    { id = "drink", title = "DRINKS", color = "cyan", keywords = Sentry.config.drinkKeywords },
+    { id = "food", title = "FOOD", color = "yellow", keywords = Sentry.config.foodKeywords },
+    { id = "linens", title = "LINENS", color = "sentry_lightcyan", keywords = Sentry.config.linensKeywords },
+    
+    -- DANGER ZONE: Extremely broad adjectives, materials, and exact-word conflicts
+    { id = "herbs", title = "HERBS & MINERALS", color = "sentry_limegreen", keywords = Sentry.config.herbandmineralKeywords },
+    { id = "ingredients", title = "CRAFTING INGREDIENTS", color = "sentry_darkkhaki", keywords = Sentry.config.ingredientsKeywords },
+    { id = "misc", title = "MISCELLANEOUS", color = "grey", keywords = Sentry.config.miscKeywords },
+}
+
+-- Initialize a master table to hold all sorted items
+Sentry.categorizedItems = Sentry.categorizedItems or {}
+for _, cat in ipairs(Sentry.config.itemCategories) do
+    Sentry.categorizedItems[cat.id] = Sentry.categorizedItems[cat.id] or {}
+end
+-- Ensure we have a fallback 'items' bucket for anything that doesn't match a keyword
+Sentry.categorizedItems["uncategorized"] = Sentry.categorizedItems["uncategorized"] or {}
 
 -- =========================================================================
 -- DEFENCE SORTING WEIGHTS
@@ -144,39 +317,41 @@ Sentry.sigilData = {
 -- =========================================================================
 -- 2. GEYSER UI CREATION
 -- =========================================================================
-Sentry.container = Sentry.container or Geyser.Container:new({
+Sentry.container = Geyser.Container:new({
     name = "SentryContainer",
-    x = "2px", y = "66%",
-    width = "350px", height = "30%",
+    x = "2px", 
+    y = "-42%",       -- A negative value anchors the top edge to the bottom of the screen
+    width = "400px", 
+    height = "42%",
 })
 
-Sentry.console = Sentry.console or Geyser.MiniConsole:new({
+Sentry.console = Geyser.MiniConsole:new({
     name = "SentryConsole",
     x = 0, y = 0,
     width = "100%", height = "100%",
     color = "black",
 }, Sentry.container)
 
-Sentry.selfContainer = Sentry.selfContainer or Geyser.Container:new({
+Sentry.selfContainer = Geyser.Container:new({
     name = "SentrySelfContainer",
-    x = "2px", y = "33%",
-    width = "350px", height = "30%",
+    x = "2px", y = "30%",
+    width = "400px", height = "30%",
 })
 
-Sentry.selfConsole = Sentry.selfConsole or Geyser.MiniConsole:new({
+Sentry.selfConsole = Geyser.MiniConsole:new({
     name = "SentrySelfConsole",
     x = 0, y = 0,
     width = "100%", height = "100%",
     color = "black",
 }, Sentry.selfContainer)
 
-Sentry.targetContainer = Sentry.targetContainer or Geyser.Container:new({
+Sentry.targetContainer = Geyser.Container:new({
     name = "SentryTargetContainer",
     x = "2px", y = "2px",
     width = "350px", height = "30%",
 })
 
-Sentry.targetConsole = Sentry.targetConsole or Geyser.MiniConsole:new({
+Sentry.targetConsole = Geyser.MiniConsole:new({
     name = "SentryTargetConsole",
     x = 0, y = 0,
     width = "100%", height = "100%",
@@ -184,13 +359,13 @@ Sentry.targetConsole = Sentry.targetConsole or Geyser.MiniConsole:new({
 }, Sentry.targetContainer)
 
 -- Ship UI occupies the exact same space as Target UI
-Sentry.shipContainer = Sentry.shipContainer or Geyser.Container:new({
+Sentry.shipContainer = Geyser.Container:new({
     name = "SentryShipContainer",
     x = "2px", y = "2px",
     width = "350px", height = "20%",
 })
 
-Sentry.shipConsole = Sentry.shipConsole or Geyser.MiniConsole:new({
+Sentry.shipConsole = Geyser.MiniConsole:new({
     name = "SentryShipConsole",
     x = 0, y = 0,
     width = "100%", height = "100%",
@@ -252,6 +427,7 @@ function Sentry.sortItem(item)
         local nameLower = item.name:lower()
         local isSigil, isTotem = false, false
         
+        -- [Keep your existing Sigil and Totem parsing logic here exactly as it is...]
         if nameLower:find("sigil") then
             for sigilType, data in pairs(Sentry.sigilData) do
                 if nameLower:find(sigilType .. " sigil") then
@@ -277,20 +453,26 @@ function Sentry.sortItem(item)
         
         if isSigil or isTotem then return end
 
-        local isFurniture, isClothing = false, false
-        for _, kw in ipairs(Sentry.config.furnitureKeywords) do
-            if nameLower:find("%f[%a]" .. kw .. "%f[%A]") then isFurniture = true; break end
-        end
-        if not isFurniture then
-            for _, kw in ipairs(Sentry.config.clothingKeywords) do
-                if nameLower:find("%f[%a]" .. kw .. "%f[%A]") then isClothing = true; break end
-            end
-        end
-
-        if isFurniture then Sentry.furniture[item.id] = item
-        elseif isClothing then Sentry.clothing[item.id] = item
-        else Sentry.items[item.id] = item end
+        -- === DYNAMIC CATEGORY SORTER ===
+        local matchedCategory = "uncategorized" -- Default fallback
         
+        for _, category in ipairs(Sentry.config.itemCategories) do
+            if category.keywords then
+                for _, kw in ipairs(category.keywords) do
+                    -- %f[%a] ensures we match whole words only (e.g., "box" won't match "boxer")
+                    if nameLower:find("%f[%a]" .. kw .. "%f[%A]") then 
+                        matchedCategory = category.id
+                        break 
+                    end
+                end
+            end
+            if matchedCategory ~= "uncategorized" then break end -- Stop searching once categorized
+        end
+        
+        -- Assign the item to its designated bucket
+        Sentry.categorizedItems[matchedCategory][item.id] = item
+        
+        -- Probe checks for walls and unidentified totems
         if (nameLower:find("wall of") and not item.direction) or (nameLower:find("totem") and not item.runes) then
             local inQueue = false
             for _, queuedID in ipairs(Sentry.probeQueue) do if queuedID == item.id then inQueue = true; break end end
@@ -344,15 +526,29 @@ function Sentry.updateRoomUI()
     Sentry.console:clear()
 
     local function tableHasContents(t)
+        if type(t) ~= "table" then return false end
         for _ in pairs(t) do return true end
         return false
     end
     
     -- Count everything to determine if we need to auto-collapse
     local totalEntities = 0
-    local function countTable(t) for _ in pairs(t) do totalEntities = totalEntities + 1 end end
-    countTable(Sentry.players) countTable(Sentry.denizens) countTable(Sentry.items)
-    countTable(Sentry.clothing) countTable(Sentry.furniture) countTable(Sentry.effects)
+    local function countTable(t) 
+        if type(t) == "table" then 
+            for _ in pairs(t) do totalEntities = totalEntities + 1 end 
+        end
+    end
+    
+    countTable(Sentry.players) 
+    countTable(Sentry.denizens) 
+    countTable(Sentry.effects)
+    
+    -- Count all dynamically categorized items
+    if type(Sentry.categorizedItems) == "table" then
+        for _, categoryTable in pairs(Sentry.categorizedItems) do
+            countTable(categoryTable)
+        end
+    end
 
     local shouldCollapse = Sentry.config.alwaysCollapse or (totalEntities >= Sentry.config.collapseThreshold)
 
@@ -444,16 +640,22 @@ function Sentry.updateRoomUI()
         isFirstSection = false
     end
 
-    if tableHasContents(Sentry.items) then
+    -- ==========================================================
+    -- DYNAMIC CATEGORY RENDERER
+    -- ==========================================================
+    -- Helper to draw a specific category block
+    local function renderCategory(title, color, itemsTable, defaultItemColor)
+        if not tableHasContents(itemsTable) then return end
+        
         if not isFirstSection then Sentry.console:cecho("\n") end
-        Sentry.console:cecho("<green>=== ITEMS ===<reset>\n")
+        Sentry.console:cecho(string.format("<%s>=== %s ===<reset>\n", color, title))
         
         local renderList, grouped = {}, {}
-        for id, i in pairs(Sentry.items) do
-            local dirStr = i.direction or "none"
-            local key = shouldCollapse and (i.name .. "_" .. dirStr) or tostring(id)
+        for id, item in pairs(itemsTable) do
+            local dirStr = item.direction or "none"
+            local key = shouldCollapse and (item.name .. "_" .. dirStr) or tostring(id)
             if not grouped[key] then
-                grouped[key] = { count = 1, id = id, item = i }
+                grouped[key] = { count = 1, id = id, item = item }
                 table.insert(renderList, grouped[key])
             else grouped[key].count = grouped[key].count + 1 end
         end
@@ -465,7 +667,7 @@ function Sentry.updateRoomUI()
             local readableTarget = Sentry.formatTarget(i.name, data.id)
             local gCmd = Sentry.config.getCmd .. readableTarget
             local pCmd = Sentry.config.probeCmd .. readableTarget
-            local iColor = Sentry.getColor("item", i.name, data.id, "<green>")
+            local iColor = Sentry.getColor("item", i.name, data.id, "<" .. defaultItemColor .. ">")
             local safeName = Sentry.stripQuotes(i.name)
             
             local suffix = ""
@@ -485,74 +687,13 @@ function Sentry.updateRoomUI()
         isFirstSection = false
     end
 
-    if tableHasContents(Sentry.clothing) then
-        if not isFirstSection then Sentry.console:cecho("\n") end
-        Sentry.console:cecho("<plum>=== CLOTHING ===<reset>\n")
-        
-        local renderList, grouped = {}, {}
-        for id, c in pairs(Sentry.clothing) do
-            local key = shouldCollapse and c.name or tostring(id)
-            if not grouped[key] then
-                grouped[key] = { count = 1, id = id, item = c }
-                table.insert(renderList, grouped[key])
-            else grouped[key].count = grouped[key].count + 1 end
-        end
-        table.sort(renderList, function(a, b) return a.item.name < b.item.name end)
-
-        for _, data in ipairs(renderList) do
-            local c = data.item
-            local countText = data.count > 1 and (" <white>(" .. data.count .. ")") or ""
-            local readableTarget = Sentry.formatTarget(c.name, data.id)
-            local gCmd = Sentry.config.getCmd .. readableTarget
-            local pCmd = Sentry.config.probeCmd .. readableTarget
-            local safeName = Sentry.stripQuotes(c.name)
-            
-            if not Sentry.isGlanced then
-                Sentry.console:cecho("<white>[")
-                Sentry.console:cechoLink("<gold>G", [[send("]]..gCmd..[[", false)]], "Get " .. safeName, true)
-                Sentry.console:cecho("<white>|")
-                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. safeName, true)
-                Sentry.console:cecho("<white>] ")
-            else
-                Sentry.console:cecho("<white>[<grey>-<white>] ")
-            end
-            Sentry.console:cecho("<plum>" .. c.name .. countText .. "<reset>\n")
-        end
-        isFirstSection = false
+    -- 1. Render explicitly mapped categories
+    for _, cat in ipairs(Sentry.config.itemCategories) do
+        renderCategory(cat.title, cat.color, Sentry.categorizedItems[cat.id], cat.color)
     end
-
-    if tableHasContents(Sentry.furniture) then
-        if not isFirstSection then Sentry.console:cecho("\n") end
-        Sentry.console:cecho("<grey>=== FURNITURE ===<reset>\n")
-        
-        local renderList, grouped = {}, {}
-        for id, f in pairs(Sentry.furniture) do
-            local key = shouldCollapse and f.name or tostring(id)
-            if not grouped[key] then
-                grouped[key] = { count = 1, id = id, item = f }
-                table.insert(renderList, grouped[key])
-            else grouped[key].count = grouped[key].count + 1 end
-        end
-        table.sort(renderList, function(a, b) return a.item.name < b.item.name end)
-
-        for _, data in ipairs(renderList) do
-            local f = data.item
-            local countText = data.count > 1 and (" <white>(" .. data.count .. ")") or ""
-            local readableTarget = Sentry.formatTarget(f.name, data.id)
-            local pCmd = Sentry.config.probeCmd .. readableTarget
-            local safeName = Sentry.stripQuotes(f.name)
-            
-            if not Sentry.isGlanced then
-                Sentry.console:cecho("<white>[")
-                Sentry.console:cechoLink("<DodgerBlue>P", [[send("]]..pCmd..[[", false)]], "Probe " .. safeName, true)
-                Sentry.console:cecho("<white>] ")
-            else
-                Sentry.console:cecho("<white>[<grey>-<white>] ")
-            end
-            Sentry.console:cecho("<LightSlateGrey>" .. f.name .. countText .. "<reset>\n")
-        end
-        isFirstSection = false
-    end
+    
+    -- 2. Render whatever didn't match any keywords as a fallback "ITEMS" section
+    renderCategory("UNCATEGORIZED ITEMS", "green", Sentry.categorizedItems["uncategorized"], "green")
 
     if tableHasContents(Sentry.effects) then
         if not isFirstSection then Sentry.console:cecho("\n") end
@@ -992,9 +1133,12 @@ function Sentry.handleItems(event)
     if event == "gmcp.Char.Items.List" then
         if gmcp.Char.Items.List.location == "room" then
             Sentry.denizens = {}
-            Sentry.items = {}
-            Sentry.furniture = {}
-            Sentry.clothing = {}
+            -- Clear all dynamic categories
+            Sentry.categorizedItems = { ["uncategorized"] = {} }
+            for _, cat in ipairs(Sentry.config.itemCategories) do
+                Sentry.categorizedItems[cat.id] = {}
+            end
+            
             for _, item in ipairs(gmcp.Char.Items.List.items) do
                 Sentry.sortItem(item)
             end
@@ -1008,9 +1152,11 @@ function Sentry.handleItems(event)
         local item = gmcp.Char.Items.Remove.item
         if gmcp.Char.Items.Remove.location == "room" then
             Sentry.denizens[item.id] = nil
-            Sentry.items[item.id] = nil
-            Sentry.furniture[item.id] = nil
-            Sentry.clothing[item.id] = nil 
+            
+            -- Scrub it from whatever category it was sorted into
+            for catID, itemTable in pairs(Sentry.categorizedItems) do
+                itemTable[item.id] = nil
+            end
             
             if Sentry.hasEffect("sigil_" .. item.id) then Sentry.removeEffect("sigil_" .. item.id, true) end
             if Sentry.hasEffect("totem_" .. item.id) then Sentry.removeEffect("totem_" .. item.id, true) end
