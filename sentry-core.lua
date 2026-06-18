@@ -129,7 +129,10 @@ Sentry.config.drinkKeywords = {
 }
 
 Sentry.config.miscKeywords = {
-    "plush", "game", "hollowed skull"
+    "plush", "game", "hollowed skull", "skeleton", "sovereigns", "stick", "branch",
+    "sovereign", "boulder", "rocks", "silky white fern", "beehive", "flourishing plant", "orchid",
+    "a shard of", "corpse of", "an ancient hickory tree", "a wormwood shrubbery",
+    "trench hole"
 }
 
 -- Need to check full list
@@ -151,7 +154,7 @@ Sentry.config.shipEquipmentKeywords = {
 Sentry.config.readableKeywords = {
     "book", "scroll", "letter", "map", "note", "tome", "manuscript", "papyrus",
     "codex", "ledger", "diary", "journal", "newspaper", "magazine", "brochure",
-    "pamphlet", "flyer", "poster", "sign", "notice", "billboard"
+    "pamphlet", "flyer", "poster", "sign", "notice", "billboard", "plaque", "foray board"
 }
 
 -- Need to check full list
@@ -178,6 +181,10 @@ Sentry.config.herbandmineralKeywords = {
 -- vials?
 Sentry.config.remedyAndtoxinKeywords = {
     "vial"
+}
+
+Sentry.config.structuresKeywords = {
+    "shrine", "mine", "column", "stronghold", "monolith", "fountain", "beacon"
 }
 
 -- =========================================================================
@@ -215,7 +222,9 @@ Sentry.config.itemCategories = {
     { id = "containers", title = "CONTAINERS", color = "sentry_chocolate", keywords = Sentry.config.containersKeywords }, -- FIXED KEYWORD POINTER HERE
     { id = "utilityfurn", title = "UTILITY FURNITURE", color = "sentry_firebrick", keywords = Sentry.config.utilityFurnitureKeywords },
     { id = "furniture", title = "FURNITURE", color = "sentry_lightslategrey", keywords = Sentry.config.furnitureKeywords },
-    
+    { id = "readables", title = "READABLES", color = "sentry_lightskyblue", keywords = Sentry.config.readableKeywords },
+    { id = "structures", title = "STRUCTURES", color = "sentry_plum", keywords = Sentry.config.structuresKeywords },
+
     -- MEDIUM SPECIFICITY: Wearables, weapons, and distinct held items
     { id = "weapons", title = "WEAPONS", color = "red", keywords = Sentry.config.weaponKeywords },
     { id = "armour", title = "ARMOUR", color = "orange", keywords = Sentry.config.armourKeywords },
@@ -224,7 +233,6 @@ Sentry.config.itemCategories = {
     
     -- LOW SPECIFICITY: Consumables, art, and generic items
     { id = "art", title = "ART OBJECTS", color = "sentry_hotpink", keywords = Sentry.config.artobjectKeywords },
-    { id = "readables", title = "READABLES", color = "sentry_lightskyblue", keywords = Sentry.config.readableKeywords },
     { id = "remedies", title = "REMEDIES & TOXINS", color = "sentry_mediumpurple", keywords = Sentry.config.remedyAndtoxinKeywords },
     { id = "drink", title = "DRINKS", color = "cyan", keywords = Sentry.config.drinkKeywords },
     { id = "food", title = "FOOD", color = "yellow", keywords = Sentry.config.foodKeywords },
@@ -310,7 +318,7 @@ Sentry.runeData = {
 Sentry.sigilData = {
     ["cube"] = {effect = "Destroy Vibrations", color = "magenta"},
     ["eye"] = {effect = "Block Souls", color = "magenta"},
-    ["key"] = {effect = "Lock Doors", color = "magenta"},
+    ["key-shaped"] = {effect = "Lock Doors", color = "magenta"},
     ["monolith"] = {effect = "Block Teleport", color = "red"},
 }
 
@@ -320,56 +328,54 @@ Sentry.sigilData = {
 Sentry.container = Geyser.Container:new({
     name = "SentryContainer",
     x = "2px", 
-    y = "-42%",       -- A negative value anchors the top edge to the bottom of the screen
+    y = "-40%",       -- Anchored to bottom, takes up bottom 40%
     width = "400px", 
-    height = "42%",
+    height = "40%",
 })
 
 Sentry.console = Geyser.MiniConsole:new({
     name = "SentryConsole",
-    x = 0, y = 0,
-    width = "100%", height = "100%",
-    color = "black",
+    x = 0, y = 0, width = "100%", height = "100%", color = "black",
 }, Sentry.container)
 
 Sentry.selfContainer = Geyser.Container:new({
     name = "SentrySelfContainer",
-    x = "2px", y = "30%",
-    width = "400px", height = "30%",
+    x = "2px", 
+    y = "30%",        -- Starts at 30%, ends at 60%
+    width = "400px", 
+    height = "30%",
 })
 
 Sentry.selfConsole = Geyser.MiniConsole:new({
     name = "SentrySelfConsole",
-    x = 0, y = 0,
-    width = "100%", height = "100%",
-    color = "black",
+    x = 0, y = 0, width = "100%", height = "100%", color = "black",
 }, Sentry.selfContainer)
 
+-- Target and Ship share the top 30% of the screen (y = 0)
 Sentry.targetContainer = Geyser.Container:new({
     name = "SentryTargetContainer",
-    x = "2px", y = "2px",
-    width = "350px", height = "30%",
+    x = "2px", 
+    y = 0,
+    width = "350px", 
+    height = "30%",
 })
 
 Sentry.targetConsole = Geyser.MiniConsole:new({
     name = "SentryTargetConsole",
-    x = 0, y = 0,
-    width = "100%", height = "100%",
-    color = "black",
+    x = 0, y = 0, width = "100%", height = "100%", color = "black",
 }, Sentry.targetContainer)
 
--- Ship UI occupies the exact same space as Target UI
 Sentry.shipContainer = Geyser.Container:new({
     name = "SentryShipContainer",
-    x = "2px", y = "2px",
-    width = "350px", height = "20%",
+    x = "2px", 
+    y = 0,
+    width = "350px", 
+    height = "30%",
 })
 
 Sentry.shipConsole = Geyser.MiniConsole:new({
     name = "SentryShipConsole",
-    x = 0, y = 0,
-    width = "100%", height = "100%",
-    color = "black",
+    x = 0, y = 0, width = "100%", height = "100%", color = "black",
 }, Sentry.shipContainer)
 
 -- =========================================================================
@@ -552,18 +558,14 @@ function Sentry.updateRoomUI()
 
     local shouldCollapse = Sentry.config.alwaysCollapse or (totalEntities >= Sentry.config.collapseThreshold)
 
-    local isFirstSection = true
-
     if gmcp and gmcp.Room and gmcp.Room.Info and gmcp.Room.Info.name then
         local headerText = gmcp.Room.Info.name
         if Sentry.isGlanced then headerText = headerText .. " <white>(Glanced)" end
         Sentry.console:cecho("\n<white><== MY LOCATION ==><reset>\n")
         Sentry.console:cecho("<white><yellow>" .. headerText .."<white><reset>\n")
-        isFirstSection = false
     end
 
     if tableHasContents(Sentry.players) then
-        if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<cyan>=== PLAYERS ===<reset>\n")
         
         local renderList, grouped = {}, {}
@@ -592,11 +594,9 @@ function Sentry.updateRoomUI()
             end
             Sentry.console:cecho("<white>] " .. pColor .. name .. countText .. "<reset>\n")
         end
-        isFirstSection = false
     end
 
     if tableHasContents(Sentry.denizens) then
-        if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<yellow>=== DENIZENS ===<reset>\n")
         
         local renderList, grouped = {}, {}
@@ -637,17 +637,14 @@ function Sentry.updateRoomUI()
             end
             Sentry.console:cecho("<white>] " .. dColor .. d.name .. countText .. suffix .. "<reset>\n")
         end
-        isFirstSection = false
     end
 
     -- ==========================================================
     -- DYNAMIC CATEGORY RENDERER
     -- ==========================================================
-    -- Helper to draw a specific category block
     local function renderCategory(title, color, itemsTable, defaultItemColor)
         if not tableHasContents(itemsTable) then return end
         
-        if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho(string.format("<%s>=== %s ===<reset>\n", color, title))
         
         local renderList, grouped = {}, {}
@@ -684,19 +681,15 @@ function Sentry.updateRoomUI()
             end
             Sentry.console:cecho(iColor .. i.name .. countText .. suffix .. "<reset>\n")
         end
-        isFirstSection = false
     end
 
-    -- 1. Render explicitly mapped categories
     for _, cat in ipairs(Sentry.config.itemCategories) do
         renderCategory(cat.title, cat.color, Sentry.categorizedItems[cat.id], cat.color)
     end
     
-    -- 2. Render whatever didn't match any keywords as a fallback "ITEMS" section
     renderCategory("UNCATEGORIZED ITEMS", "green", Sentry.categorizedItems["uncategorized"], "green")
 
     if tableHasContents(Sentry.effects) then
-        if not isFirstSection then Sentry.console:cecho("\n") end
         Sentry.console:cecho("<magenta>=== EFFECTS ===<reset>\n")
         
         local renderList, grouped = {}, {}
@@ -805,7 +798,7 @@ function Sentry.updateSelfUI()
     end
 
     -- 2. LIMBS
-    Sentry.selfConsole:cecho("\n<green>=== LIMB DAMAGE ===<reset>\n")
+    Sentry.selfConsole:cecho("<green>=== LIMB DAMAGE ===<reset>\n")
     if Legacy and Legacy.SLC and Legacy.SLC.limbs then
         local limbs = Legacy.SLC.limbs
         local function getLimbString(displayName, dmg)
@@ -878,7 +871,7 @@ function Sentry.updateSelfUI()
         end
         
         local function renderSection(title, color, dataTable)
-            Sentry.selfConsole:cecho("\n<" .. color .. ">=== " .. title .. " ===<reset>\n")
+            Sentry.selfConsole:cecho("<" .. color .. ">=== " .. title .. " ===<reset>\n")
             
             local sortedKeys = {}
             for k, _ in pairs(dataTable) do table.insert(sortedKeys, k) end
@@ -925,7 +918,7 @@ function Sentry.updateSelfUI()
         renderSection("TATTOOS", "DodgerBlue", activeTattoos)
         
     else
-        Sentry.selfConsole:cecho("\n<cyan>=== ACTIVE DEFENCES ===<reset>\n")
+        Sentry.selfConsole:cecho("<cyan>=== ACTIVE DEFENCES ===<reset>\n")
         Sentry.selfConsole:cecho("<grey>Waiting for Legacy Defs...<reset>\n")
     end
 end
