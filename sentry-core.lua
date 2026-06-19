@@ -1459,36 +1459,51 @@ function Sentry.createTriggers()
 
     -- Environmental Effects
     -- ==========================================
-    -- CONDITIONAL SURVEY SYSTEM (Vines)
+    -- CONDITIONAL SURVEY SYSTEM (Vines & Effects)
     -- ==========================================
     
     -- 1. The Detection Trigger
-    -- We look for a short, unique chunk of the phrase to avoid word-wrap breaks.
-    -- If we see it, and we don't already know about the vines, we silently ask for the owner.
     table.insert(Sentry.triggers, tempRegexTrigger("Vines have", 
         [[ 
             if not Sentry.hasEffect("vines") then
-                Sentry.silentSurvey = true
+                Sentry.expectingSilentSurvey = true
                 send("survey", false) 
             end
         ]] 
     ))
 
-    -- 2. The Survey Catcher (Updated for Silence)
-    table.insert(Sentry.triggers, tempRegexTrigger("^This location has been reclaimed for nature by (\\w+)\\.$", 
+    -- 2. The Gatekeeper (Waits for the survey to actually arrive from the server)
+    table.insert(Sentry.triggers, tempRegexTrigger("^You discern that you are in .*\\.$", 
         [[ 
-            local owner = matches[2]
-            Sentry.addEffect("vines", "Vines (" .. owner .. ")", "green") 
-            
-            -- If Sentry asked for this survey, hide the evidence from the main window!
-            if Sentry.silentSurvey then
+            if Sentry.expectingSilentSurvey then
+                Sentry.expectingSilentSurvey = false
+                Sentry.gaggingSurvey = true
                 deleteLine()
-                Sentry.silentSurvey = false
+                
+                -- Turn the blanket gag off the moment the survey finishes (at the prompt!)
+                tempPromptTrigger(function() Sentry.gaggingSurvey = false end, 1)
             end
         ]] 
     ))
 
-    -- 3. The Visual Spawns/Destroys, this is placeholder, need actual lines for this
+    -- 3. The Extractor (Grabs the owner data invisibly)
+    table.insert(Sentry.triggers, tempRegexTrigger("^This location has been reclaimed for nature by (\\w+)\\.$", 
+        [[ 
+            local owner = matches[2]
+            Sentry.addEffect("vines", "Vines (" .. owner .. ")", "green") 
+        ]] 
+    ))
+
+    -- 4. The Blanket Gag (Eats the unpredictable middle lines of the survey)
+    table.insert(Sentry.triggers, tempRegexTrigger("^.*$", 
+        [[ 
+            if Sentry.gaggingSurvey then 
+                deleteLine() 
+            end 
+        ]] 
+    ))
+
+    -- 5. The Visual Spawns/Destroys
     table.insert(Sentry.triggers, tempRegexTrigger("^Thorny vines suddenly erupt from the ground.*", 
         [[ Sentry.addEffect("vines", "Vines (Unknown)", "green") ]] 
     ))
