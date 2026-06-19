@@ -1458,12 +1458,44 @@ function Sentry.createTriggers()
     table.insert(Sentry.triggers, tempRegexTrigger("^It weighs \\d+ ounce\\(s\\)\\.$", [[ if Sentry.silentProbing then deleteLine() end ]] ))
 
     -- Environmental Effects
-    table.insert(Sentry.triggers, tempRegexTrigger("^The air is filled with a humming vibration\\.$", [[ Sentry.addEffect("vibrations", "Humming Vibrations", "magenta") ]] ))
-    table.insert(Sentry.triggers, tempRegexTrigger("^The humming vibration in the air fades away\\.$", [[ Sentry.removeEffect("vibrations") ]] ))
-    table.insert(Sentry.triggers, tempRegexTrigger("^A roaring wall of fire erupts.*$", [[ Sentry.addEffect("fire", "Roaring Fire", "orange_red") ]] ))
-    table.insert(Sentry.triggers, tempRegexTrigger("^The wall of fire burns out and disappears\\.$", [[ Sentry.removeEffect("fire") ]] ))
-    table.insert(Sentry.triggers, tempRegexTrigger("^The area is flooded with water\\.$", [[ Sentry.addEffect("flood", "Flooded", "blue") ]] ))
-    table.insert(Sentry.triggers, tempRegexTrigger("^The floodwaters recede\\.$", [[ Sentry.removeEffect("flood") ]] ))
+    -- ==========================================
+    -- CONDITIONAL SURVEY SYSTEM (Vines)
+    -- ==========================================
+    
+    -- 1. The Detection Trigger
+    -- We look for a short, unique chunk of the phrase to avoid word-wrap breaks.
+    -- If we see it, and we don't already know about the vines, we silently ask for the owner.
+    table.insert(Sentry.triggers, tempRegexTrigger("Vines have", 
+        [[ 
+            if not Sentry.hasEffect("vines") then
+                Sentry.silentSurvey = true
+                send("survey", false) 
+            end
+        ]] 
+    ))
+
+    -- 2. The Survey Catcher (Updated for Silence)
+    table.insert(Sentry.triggers, tempRegexTrigger("^This location has been reclaimed for nature by (\\w+)\\.$", 
+        [[ 
+            local owner = matches[2]
+            Sentry.addEffect("vines", "Vines (" .. owner .. ")", "green") 
+            
+            -- If Sentry asked for this survey, hide the evidence from the main window!
+            if Sentry.silentSurvey then
+                deleteLine()
+                Sentry.silentSurvey = false
+            end
+        ]] 
+    ))
+
+    -- 3. The Visual Spawns/Destroys, this is placeholder, need actual lines for this
+    table.insert(Sentry.triggers, tempRegexTrigger("^Thorny vines suddenly erupt from the ground.*", 
+        [[ Sentry.addEffect("vines", "Vines (Unknown)", "green") ]] 
+    ))
+
+    table.insert(Sentry.triggers, tempRegexTrigger("^The thorny vines covering the location rapidly shrivel.*", 
+        [[ Sentry.removeEffect("vines") ]] 
+    ))
 end
 
 -- =========================================================================
