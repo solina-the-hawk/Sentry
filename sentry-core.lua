@@ -1459,6 +1459,23 @@ function Sentry.createTriggers()
 
     -- Environmental Effects
     -- ==========================================
+    -- ABLAZE DETECTION
+    -- ==========================================
+    
+    -- 1. Catch the text in the room description or if the effect is fired in the room
+    table.insert(Sentry.triggers, tempRegexTrigger("The area is ablaze!", 
+        [[ Sentry.addEffect("ablaze", "Ablaze", "red") ]] 
+    ))
+
+    -- 2. Redundancy: Catch the damage tick just in case we missed the room desc
+    table.insert(Sentry.triggers, tempRegexTrigger("^The roaring inferno engulfs you as you fight to find a way out\\.$", 
+        [[ 
+            if not Sentry.hasEffect("ablaze") then
+                Sentry.addEffect("ablaze", "Ablaze", "red") 
+            end
+        ]] 
+    ))
+    -- ==========================================
     -- CONDITIONAL SURVEY SYSTEM (Vines & Effects)
     -- ==========================================
     
