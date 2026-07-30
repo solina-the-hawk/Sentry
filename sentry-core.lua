@@ -524,6 +524,60 @@ function Sentry.stripQuotes(str)
 end
 
 -- =========================================================================
+-- PROFILE MANAGEMENT
+-- =========================================================================
+function Sentry.saveProfile()
+    local baseDir = getMudletHomeDir() .. "/Sentry"
+    if not lfs.attributes(baseDir) then lfs.mkdir(baseDir) end
+    
+    local filepath = baseDir .. "/Sentry_Profile.json"
+    
+    -- Selectively export user-configurable settings
+    local export_config = {
+        targetCmd = Sentry.config.targetCmd,
+        getCmd = Sentry.config.getCmd,
+        probeCmd = Sentry.config.probeCmd,
+        mainVisible = Sentry.config.mainVisible,
+        selfVisible = Sentry.config.selfVisible,
+        targetVisible = Sentry.config.targetVisible,
+        shipVisible = Sentry.config.shipVisible,
+        showUIBorders = Sentry.config.showUIBorders,
+        collapseThreshold = Sentry.config.collapseThreshold,
+        alwaysCollapse = Sentry.config.alwaysCollapse,
+        shipDisplay = Sentry.config.shipDisplay,
+        useNDBColors = Sentry.config.useNDBColors,
+        colorMounts = Sentry.config.colorMounts,
+        myLoyals = Sentry.config.myLoyals,
+        defenceWeights = Sentry.config.defenceWeights,
+        expectedDefences = Sentry.config.expectedDefences,
+        expectedTattoos = Sentry.config.expectedTattoos,
+    }
+    
+    local file = io.open(filepath, "w")
+    if file then
+        file:write(yajl.to_string(export_config))
+        file:close()
+    end
+end
+
+function Sentry.loadProfile()
+    local filepath = getMudletHomeDir() .. "/Sentry/Sentry_Profile.json"
+    local file = io.open(filepath, "r")
+    
+    if not file then 
+        return -- If no profile, just use the script defaults. It will be saved on exit.
+    end
+    
+    local contents = file:read("*a")
+    file:close()
+    
+    local success, profile = pcall(yajl.to_value, contents)
+    if success and type(profile) == "table" then
+        for k, v in pairs(profile) do Sentry.config[k] = v end
+    end
+end
+
+-- =========================================================================
 -- 4. UI UPDATERS
 -- =========================================================================
 
@@ -1586,25 +1640,108 @@ function Sentry.showHelp()
     cecho("\n<LightSkyBlue>In-Game Commands:<reset>")
     cecho("\n  <gold>sentry help<reset>          - Displays this help menu.")
     cecho("\n  <gold>sentry loyals<reset>        - Scans and tracks your loyal companions.")
-    cecho("\n  <gold>sentry toggle main<reset>   - Toggles Room Awareness UI.")
-    cecho("\n  <gold>sentry toggle self<reset>   - Toggles Self Status UI.")
-    cecho("\n  <gold>sentry toggle target<reset> - Toggles Target Status UI.")
-    cecho("\n  <gold>sentry toggle ship<reset>   - Toggles Ship Info UI manually.")
-    cecho("\n  <gold>sentry toggle collapse<reset> - Toggles Identical Item Grouping.")
+    cecho("\n  <gold>sentry toggle <ui><reset>    - Toggles a UI window (main, self, target, ship, collapse).")
+    cecho("\n\n<LightSkyBlue>Configuration:<reset>")
+    cecho("\n  <gold>sentry expect list<reset>              - Show currently tracked items.")
+    cecho("\n  <gold>sentry expect <def|tattoo> <add|remove> <name><reset> - Add or remove an item from the tracker.")
+    cecho("\n  <gold>sentry profile save<reset>      - Manually save your settings.")
+    cecho("\n  <gold>sentry profile load<reset>      - Manually load your settings.")
     cecho("\n<SteelBlue>=======================================================================<reset>\n")
 end
 
 function Sentry.handleUserCommand(args)
     local cmd = args:lower():match("^%s*(.-)%s*$")
+    local mainCmd, rest = cmd:match("^(%S+)%s*(.*)$")
+    mainCmd = mainCmd or cmd
     
-    if cmd == "help" or cmd == "" then Sentry.showHelp()
-    elseif cmd:find("^toggle") then
+    if mainCmd == "help" or mainCmd == "" then Sentry.showHelp()
+    elseif mainCmd == "toggle" then
         local target = cmd:match("^toggle (%w+)") or "main"
         Sentry.toggle(target)
     elseif cmd == "loyals" then
         cecho("\n<SteelBlue>[Sentry]:<reset> <white>Updating loyal companions...<reset>\n")
         Sentry.config.myLoyals = {} 
         send("loyals", false) 
+    elseif mainCmd == "profile" then
+        local subCmd = rest:match("^(%w+)")
+        if subCmd == "save" then 
+            Sentry.saveProfile()
+            cecho("\n<SteelBlue>[Sentry]:<reset> <white>Profile saved successfully.<reset>\n")
+        elseif subCmd == "load" then 
+            Sentry.loadProfile()
+            cecho("\n<SteelBlue>[Sentry]:<reset> <white>Profile loaded successfully.<reset>\n")
+            Sentry.updateSelfUI()
+            Sentry.updateRoomUI()
+        else
+            cecho("\n<SteelBlue>[Sentry]:<reset> <white>Usage: sentry profile <save|load><reset>\n")
+        end
+    elseif mainCmd == "expect" then
+        local parts = {}
+        for word in rest:gmatch("%S+") do table.insert(parts, word) end
+
+        if #parts == 1 and parts[1] == "list" then
+            cecho("\n<SteelBlue>[Sentry]:<reset> <white>Currently Expected Items:<reset>\n")
+            
+            cecho("\n<cyan>--- Defences ---<reset>\n")
+            if #Sentry.config.expectedDefences > 0 then
+                for _, def in ipairs(Sentry.config.expectedDefences) do
+                    cecho("  <white>- " .. def .. "<reset>\n")
+                end
+            else
+                cecho("  <grey>None.<reset>\n")
+            end
+
+            cecho("\n<DodgerBlue>--- Tattoos ---<reset>\n")
+            if #Sentry.config.expectedTattoos > 0 then
+                for _, tat in ipairs(Sentry.config.expectedTattoos) do
+                    cecho("  <white>- " .. tat .. "<reset>\n")
+                end
+            else
+                cecho("  <grey>None.<reset>\n")
+            end
+            return
+        end
+
+        if #parts < 3 then
+            cecho("\n<SteelBlue>[Sentry]:<reset> <white>Usage: sentry expect <list|def|tattoo> <add|remove> <name><reset>\n")
+            return
+        end
+
+        local type = parts[1]
+        local action = parts[2]
+        local name = table.concat(parts, " ", 3)
+
+        local targetTable
+        if type == "def" then targetTable = Sentry.config.expectedDefences
+        elseif type == "tattoo" then targetTable = Sentry.config.expectedTattoos
+        else 
+            cecho("\n<SteelBlue>[Sentry]:<reset> <white>Invalid type. Use 'def' or 'tattoo'.<reset>\n")
+            return
+        end
+
+        if action == "add" then
+            table.insert(targetTable, name)
+            cecho(string.format("\n<SteelBlue>[Sentry]:<reset> <white>Added '%s' to expected %ss.<reset>\n", name, type))
+        elseif action == "remove" then
+            local found = false
+            for i, v in ipairs(targetTable) do
+                if v == name then
+                    table.remove(targetTable, i)
+                    found = true
+                    break
+                end
+            end
+            if found then
+                cecho(string.format("\n<SteelBlue>[Sentry]:<reset> <white>Removed '%s' from expected %ss.<reset>\n", name, type))
+            else
+                cecho(string.format("\n<SteelBlue>[Sentry]:<reset> <white>'%s' not found in expected %ss.<reset>\n", name, type))
+            end
+        else
+            cecho("\n<SteelBlue>[Sentry]:<reset> <white>Invalid action. Use 'add' or 'remove'.<reset>\n")
+            return
+        end
+        Sentry.updateSelfUI()
+        Sentry.saveProfile()
     else
         cecho("\n<SteelBlue>[Sentry]:<reset> <white>Unknown command. Type <gold>sentry help<white> for options.<reset>\n")
     end
@@ -1652,7 +1789,31 @@ table.insert(Sentry.events, registerAnonymousEventHandler("sysDataSendRequest", 
     Sentry.updateTargetUI()
 end))
 
+-- Add save hooks
+table.insert(Sentry.events, registerAnonymousEventHandler("sysExitEvent", "Sentry.saveProfile"))
+table.insert(Sentry.events, registerAnonymousEventHandler("sysDisconnectionEvent", "Sentry.saveProfile"))
+
 Sentry.createTriggers()
+
+-- Load user profile, which may override defaults
+Sentry.loadProfile()
+
+-- On load, determine if we are on a ship and set visibility accordingly,
+-- overriding any saved profile setting for shipVisible.
+if gmcp and gmcp.Room and gmcp.Room.Info and gmcp.Room.Info.environment then
+    local isVessel = (gmcp.Room.Info.environment == "Vessel")
+    Sentry.isOnShip = isVessel
+    Sentry.config.shipVisible = isVessel
+    if isVessel then
+        Sentry.silentShipInfo = true
+        send("ship info", false)
+    end
+else
+    -- If GMCP isn't ready on load, default to off for safety.
+    Sentry.isOnShip = false
+    Sentry.config.shipVisible = false
+end
+
 Sentry.updateRoomUI()
 Sentry.updateSelfUI()
 Sentry.updateTargetUI()
@@ -1662,15 +1823,25 @@ Sentry.updateShipUI()
 -- LIVE RELOAD NUDGE
 -- Forces Geyser to redraw UIs when clicking "Save" in Mudlet
 -- =========================================================================
-local containersToNudge = {
-    Sentry.container, Sentry.selfContainer, 
-    Sentry.targetContainer, Sentry.shipContainer
-}
+-- This block ensures that upon script reload, the visibility of each UI window
+-- respects its saved configuration state.
+Sentry.container:reposition()
+if Sentry.config.mainVisible then Sentry.container:show() else Sentry.container:hide() end
 
-for _, box in ipairs(containersToNudge) do
-    if box then
-        box:reposition()
-        box:hide()
-        box:show()
+Sentry.selfContainer:reposition()
+if Sentry.config.selfVisible then Sentry.selfContainer:show() else Sentry.selfContainer:hide() end
+
+Sentry.targetContainer:reposition()
+Sentry.shipContainer:reposition()
+
+if Sentry.config.shipVisible then
+    Sentry.shipContainer:show()
+    Sentry.targetContainer:hide()
+else
+    Sentry.shipContainer:hide()
+    if Sentry.config.targetVisible then
+        Sentry.targetContainer:show()
+    else
+        Sentry.targetContainer:hide()
     end
 end
