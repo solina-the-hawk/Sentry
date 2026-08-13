@@ -21,6 +21,12 @@ Sentry.parsingShipInfo = false
 Sentry.silentShipInfo = false
 Sentry.shipData = Sentry.shipData or {}
 
+-- Recklessness tracking
+Sentry.lastVitals = Sentry.lastVitals or { hp = 0, mp = 0 }
+Sentry.expectingHpChange = false
+Sentry.hasRecklessness = false
+Sentry.recklessnessTimer = nil
+
 -- =========================================================================
 -- 1. CONFIGURATION
 -- =========================================================================
@@ -581,6 +587,38 @@ end
 -- 4. UI UPDATERS
 -- =========================================================================
 
+function Sentry.onVitalsUpdate()
+    if not gmcp.Char.Vitals.hp then return end
+
+    local currentHp = tonumber(gmcp.Char.Vitals.hp)
+    local hasLegacyRecklessness = Legacy and Legacy.Curing and Legacy.Curing.Defs and Legacy.Curing.Defs.current and Legacy.Curing.Defs.current["recklessness"]
+
+    -- If our hidden recklessness flag is on, but vitals have now changed, it must have worn off.
+    if Sentry.hasRecklessness and currentHp ~= Sentry.lastVitals.hp then
+        Sentry.hasRecklessness = false
+        -- Only show a message if Legacy didn't also have it (to avoid spam if Legacy has its own message)
+        if not hasLegacyRecklessness then
+            Sentry.echo("<green>Recklessness has worn off. (Vitals are updating again.)<reset>")
+        end
+    end
+
+    -- If we were expecting an HP change from damage and it happened, cancel the recklessness detection timer.
+    if Sentry.expectingHpChange and currentHp ~= Sentry.lastVitals.hp then
+        Sentry.expectingHpChange = false
+        if Sentry.recklessnessTimer then
+            killTimer(Sentry.recklessnessTimer)
+            Sentry.recklessnessTimer = nil
+        end
+    end
+
+    -- Store the latest vitals for the next check
+    Sentry.lastVitals.hp = currentHp
+    Sentry.lastVitals.mp = tonumber(gmcp.Char.Vitals.mp)
+
+    -- Now, call the UI update
+    Sentry.updateSelfUI()
+end
+
 function Sentry.updateRoomUI()
     if not Sentry.console then return end
     Sentry.console:clear()
@@ -823,16 +861,30 @@ function Sentry.updateSelfUI()
     -- 1. AFFLICTIONS
     Sentry.selfConsole:cecho("<red>=== CURRENT AFFLICTIONS ===<reset>\n")
     if gmcp and gmcp.Char and gmcp.Char.Afflictions and gmcp.Char.Afflictions.List then
-        local activeAffs = {}
+        local activeAffs = {} 
         for _, affData in ipairs(gmcp.Char.Afflictions.List) do
             local affNameLower = affData.name:lower()
             if hasMindseye and (affNameLower == "blindness" or affNameLower == "deafness") then
                 -- Skip tactical defences
             elseif affNameLower == "insomnia" then
                 -- Skip tactical defences
+            elseif affNameLower == "recklessness" then
+                -- If GMCP sends recklessness, our hidden flag is no longer needed
+                Sentry.hasRecklessness = false
+                table.insert(activeAffs, affData.name:title())
             else
                 table.insert(activeAffs, affData.name:title())
             end
+        end
+
+        -- Check for hidden recklessness (our flag) or if Legacy caught it
+        local hasLegacyRecklessness = Legacy and Legacy.Curing and Legacy.Curing.Defs and Legacy.Curing.Defs.current and Legacy.Curing.Defs.current["recklessness"]
+        if Sentry.hasRecklessness or hasLegacyRecklessness then
+            local alreadyInList = false
+            for _, affName in ipairs(activeAffs) do
+                if affName:lower() == "recklessness" then alreadyInList = true; break end
+            end
+            if not alreadyInList then table.insert(activeAffs, "Recklessness") end
         end
 
         if #activeAffs == 0 then
@@ -842,8 +894,18 @@ function Sentry.updateSelfUI()
             for i = 1, #activeAffs, 2 do
                 local c1 = activeAffs[i]
                 local c2 = activeAffs[i+1] or ""
-                local col1 = Sentry.padText("- " .. c1, "<white>- " .. c1, 20)
-                local col2 = c2 ~= "" and ("<white>- " .. c2) or ""
+
+                local function formatAff(affName)
+                    if not affName or affName == "" then return "", "" end
+                    if affName:lower() == "recklessness" then
+                        return "- " .. affName, "<red>- " .. affName .. "<reset>"
+                    end
+                    return "- " .. affName, "<white>- " .. affName .. "<reset>"
+                end
+                local raw1, f1 = formatAff(c1)
+                local raw2, f2 = formatAff(c2)
+                local col1 = Sentry.padText(raw1, f1, 20)
+                local col2 = f2
                 Sentry.selfConsole:cecho(col1 .. col2 .. "\n")
             end
         end
@@ -1241,6 +1303,33 @@ Sentry.triggers = Sentry.triggers or {}
 function Sentry.createTriggers()
     for _, id in ipairs(Sentry.triggers) do killTrigger(id) end
     Sentry.triggers = {}
+
+    -- Recklessness Detection
+    table.insert(Sentry.triggers, tempRegexTrigger("^Health lost: (\\d+)",
+    [[
+        -- If we take damage, we expect our HP to change.
+        Sentry.expectingHpChange = true
+        if Sentry.recklessnessTimer then killTimer(Sentry.recklessnessTimer) end
+
+        -- Wait a very short moment for GMCP to update.
+        -- If it doesn't, the timer will fire and flag us as having hidden recklessness.
+        Sentry.recklessnessTimer = tempTimer(0.5, function()
+            if Sentry.expectingHpChange then
+                -- The flag was never cleared by onVitalsUpdate, so vitals are stuck.
+                Sentry.expectingHpChange = false -- Reset the flag
+                if not Sentry.hasRecklessness then
+                    Sentry.hasRecklessness = true
+                    Sentry.echo("<red>Recklessness detected! (Vitals did not update after taking damage.)<reset>")
+                    Sentry.updateSelfUI()
+                end
+            end
+        end)
+    ]]))
+    table.insert(Sentry.triggers, tempRegexTrigger("^None may stand in your way! You are invincible!$",
+    [[
+        -- This is the visible recklessness message. Legacy should catch it, but we'll force a UI update just in case.
+        tempTimer(0.2, function() Sentry.updateSelfUI() end)
+    ]]))
 
     -- SHIP MOVEMENT
     table.insert(Sentry.triggers, tempRegexTrigger("^The ship (?:moves to|drifts toward) the (\\w+)\\.$", 
@@ -1780,7 +1869,7 @@ table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Items.Remov
 
 -- Self Status Events
 table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Afflictions", "Sentry.updateSelfUI"))
-table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Vitals", "Sentry.updateSelfUI"))
+    table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Vitals", "Sentry.onVitalsUpdate"))
 table.insert(Sentry.events, registerAnonymousEventHandler("gmcp.Char.Defences", "Sentry.updateSelfUI"))
 
 -- Target Status / Master Command Events
