@@ -1046,8 +1046,10 @@ function Sentry.updateTargetUI()
     if not Sentry.targetConsole then return end
     Sentry.targetConsole:clear()
 
-    local targetName = (Bladestorm and Bladestorm.pvp and Bladestorm.pvp.targetName) or "No Target"
-    targetName = targetName:upper()
+    -- Point to Battlesense for the target name instead of Bladestorm
+    local targetName = (Battlesense and Battlesense.state and Battlesense.state.targetName) or "No Target"
+    local targetNameUpper = targetName and targetName:upper() or "NO TARGET"
+
 
     -- 1. TARGET AFFLICTIONS
     Sentry.targetConsole:cecho(string.format("<orange>=== %s'S AFFLICTIONS ===<reset>\n", targetName))
@@ -1076,10 +1078,12 @@ function Sentry.updateTargetUI()
     end
 
     -- 2. TARGET LIMBS
-    Sentry.targetConsole:cecho(string.format("\n<magenta>=== %s'S LIMBS ===<reset>\n", targetName))
-    if Bladestorm and Bladestorm.pvp and Bladestorm.pvp.targetName then
+    Sentry.targetConsole:cecho(string.format("\n<magenta>=== %s'S LIMBS ===<reset>\n", targetNameUpper))
+    -- Point to Battlesense's PvP module for limb data
+    if Battlesense and Battlesense.PvP and Battlesense.PvP.getTargetLimbDamage then
         local function getLimbString(displayName, queryName)
-            local dmg = Bladestorm.getLimbDamage(queryName)
+            -- Default to 0 if the function doesn't exist or returns nil
+            local dmg = Battlesense.PvP.getTargetLimbDamage(queryName) or 0
             local color = "<white>"
             if dmg >= 100 then color = "<red>"
             elseif dmg >= 66 then color = "<orange>"
