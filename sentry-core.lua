@@ -1080,10 +1080,11 @@ function Sentry.updateTargetUI()
     -- 2. TARGET LIMBS
     Sentry.targetConsole:cecho(string.format("\n<magenta>=== %s'S LIMBS ===<reset>\n", targetNameUpper))
     -- Point to Battlesense's PvP module for limb data
-    if Battlesense and Battlesense.PvP and Battlesense.PvP.getTargetLimbDamage then
+    if Battlesense and Battlesense.PvP and Battlesense.PvP.getLimbDamage then
+
         local function getLimbString(displayName, queryName)
             -- Default to 0 if the function doesn't exist or returns nil
-            local dmg = Battlesense.PvP.getTargetLimbDamage(queryName) or 0
+            local dmg = Battlesense.PvP.getLimbDamage(queryName) or 0
             local color = "<white>"
             if dmg >= 100 then color = "<red>"
             elseif dmg >= 66 then color = "<orange>"
