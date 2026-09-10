@@ -1045,18 +1045,19 @@ end
 function Sentry.updateTargetUI()
     if not Sentry.targetConsole then return end
     Sentry.targetConsole:clear()
-
-    -- Point to Battlesense for the target name instead of Bladestorm
-    local targetName = (Battlesense and Battlesense.state and Battlesense.state.targetName) or "No Target"
-    local targetNameUpper = targetName and targetName:upper() or "NO TARGET"
-
+    
+    -- Use the global 'target' from the AK system
+    local targetName = target or "No Target"
+    local targetNameUpper = targetName:upper()
 
     -- 1. TARGET AFFLICTIONS
-    Sentry.targetConsole:cecho(string.format("<orange>=== %s'S AFFLICTIONS ===<reset>\n", targetName))
-    if ak and ak.score then
+    Sentry.targetConsole:cecho(string.format("<orange>=== %s'S AFFLICTIONS ===<reset>\n", targetNameUpper))
+    if affstrack and affstrack.score then
         local activeAffs = {}
-        for affName, score in pairs(ak.score) do
-            if (type(score) == "number" and score >= 100) or (type(score) == "boolean" and score == true) then
+        for affName, score in pairs(affstrack.score) do
+            -- Check for afflictions that are "stuck" (score >= 100) but are not limb damage
+            local isLimb = affName:find("leg") or affName:find("arm") or affName == "head" or affName == "torso"
+            if (type(score) == "number" and score >= 100 and not isLimb) or (type(score) == "boolean" and score == true) then
                 table.insert(activeAffs, affName:title())
             end
         end
@@ -1079,16 +1080,13 @@ function Sentry.updateTargetUI()
 
     -- 2. TARGET LIMBS
     Sentry.targetConsole:cecho(string.format("\n<magenta>=== %s'S LIMBS ===<reset>\n", targetNameUpper))
-    -- Point to Battlesense's PvP module for limb data
-    if Battlesense and Battlesense.PvP and Battlesense.PvP.getLimbDamage then
-
-        local function getLimbString(displayName, queryName)
-            -- Default to 0 if the function doesn't exist or returns nil
-            local dmg = Battlesense.PvP.getLimbDamage(queryName) or 0
+    if affstrack and affstrack.score then
+        local function getLimbString(displayName, limbKey)
+            local dmg = (affstrack.score[limbKey] or 0)
             local color = "<white>"
-            if dmg >= 100 then color = "<red>"
-            elseif dmg >= 66 then color = "<orange>"
-            elseif dmg >= 33 then color = "<yellow>"
+            if dmg >= 300 then color = "<red>"
+            elseif dmg >= 200 then color = "<orange>"
+            elseif dmg >= 100 then color = "<yellow>"
             end
             local raw = string.format("%s: %s%%", displayName, dmg)
             local colored = string.format("%s%s<reset>", color, raw)
@@ -1099,15 +1097,15 @@ function Sentry.updateTargetUI()
         local r2, c2 = getLimbString("Torso", "torso")
         Sentry.targetConsole:cecho(Sentry.padText(r1, c1, 20) .. c2 .. "\n")
 
-        r1, c1 = getLimbString("L-Arm", "left arm")
-        r2, c2 = getLimbString("R-Arm", "right arm")
+        r1, c1 = getLimbString("L-Arm", "leftarm")
+        r2, c2 = getLimbString("R-Arm", "rightarm")
         Sentry.targetConsole:cecho(Sentry.padText(r1, c1, 20) .. c2 .. "\n")
 
-        r1, c1 = getLimbString("L-Leg", "left leg")
-        r2, c2 = getLimbString("R-Leg", "right leg")
+        r1, c1 = getLimbString("L-Leg", "leftleg")
+        r2, c2 = getLimbString("R-Leg", "rightleg")
         Sentry.targetConsole:cecho(Sentry.padText(r1, c1, 20) .. c2 .. "\n")
     else
-        Sentry.targetConsole:cecho("<grey>No target selected.<reset>\n")
+        Sentry.targetConsole:cecho("<grey>Waiting for AK data...<reset>\n")
     end
 end
 
